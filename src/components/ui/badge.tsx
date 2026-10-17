@@ -20,10 +20,10 @@ export function Badge({ tone = "neutral", className, ...props }: React.HTMLAttri
 
 const alertIcons = { info: Info, success: CheckCircle2, warning: TriangleAlert, danger: AlertCircle } as const;
 
-export function Alert({ tone = "danger", title, children, className, action }: { tone?: keyof typeof alertIcons; title?: string; children?: React.ReactNode; className?: string; action?: React.ReactNode }) {
+export function Alert({ tone = "danger", title, children, className, action, ...rest }: { tone?: keyof typeof alertIcons; title?: string; children?: React.ReactNode; className?: string; action?: React.ReactNode; "data-testid"?: string }) {
   const Icon = alertIcons[tone];
   return (
-    <div role={tone === "danger" || tone === "warning" ? "alert" : "status"} className={cn("flex gap-3 rounded-[var(--radius-md)] px-4 py-3 text-sm ring-1 ring-inset", tones[tone], className)}>
+    <div {...rest} role={tone === "danger" || tone === "warning" ? "alert" : "status"} className={cn("flex gap-3 rounded-[var(--radius-md)] px-4 py-3 text-sm ring-1 ring-inset", tones[tone], className)}>
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
         {title && <p className="font-semibold">{title}</p>}

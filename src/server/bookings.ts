@@ -187,3 +187,20 @@ export async function addReview(userId: string, code: string, rating: number, co
     return review;
   });
 }
+
+/** A booking code or a group code (multi-room checkout) → every booking in it the viewer may see. */
+export async function getBookingGroupForViewer(viewer: { id: string; role: string }, code: string) {
+  const bookings = await db.booking.findMany({
+    where: { OR: [{ code }, { groupCode: code }] },
+    include: {
+      hotel: { include: { destination: { select: { name: true, slug: true } }, photos: { where: { isCover: true }, include: { asset: true }, take: 1 } } },
+      room: { include: { roomType: true, floor: true, photos: { where: { isPrimary: true }, include: { asset: true }, take: 1 } } },
+      payments: { orderBy: { createdAt: "desc" } },
+      review: true,
+    },
+    orderBy: { code: "asc" },
+  });
+  const visible = bookings.filter((b) => b.userId === viewer.id || viewer.role === "ADMIN" || (viewer.role === "PARTNER" && b.hotel.ownerId === viewer.id));
+  if (!visible.length) throw new AppError("NOT_FOUND", "Booking not found");
+  return visible;
+}

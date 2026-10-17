@@ -1,7 +1,7 @@
 "use client";
 
 import { ImageOff } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,6 +28,14 @@ export function Photo({
   sizes?: string;
 }) {
   const [state, setState] = useState<"loading" | "loaded" | "error">(src ? "loading" : "error");
+  const img = useRef<HTMLImageElement>(null);
+  // The image may finish loading before hydration attaches onLoad; check once mounted.
+  useEffect(() => {
+    const el = img.current;
+    if (!src) return setState("error");
+    if (el?.complete) setState(el.naturalWidth > 0 ? "loaded" : "error");
+    else setState("loading");
+  }, [src]);
   return (
     <div className={cn("relative overflow-hidden bg-muted", className)} style={{ aspectRatio: ratio }}>
       {state === "loading" && <div className="skeleton absolute inset-0" aria-hidden />}
@@ -51,9 +59,7 @@ export function Photo({
           fetchPriority={priority ? "high" : undefined}
           onLoad={() => setState("loaded")}
           onError={() => setState("error")}
-          ref={(el) => {
-            if (el?.complete && el.naturalWidth > 0 && state === "loading") setState("loaded");
-          }}
+          ref={img}
           className={cn("absolute inset-0 size-full object-cover transition-opacity duration-300", state === "loaded" ? "opacity-100" : "opacity-0", imgClassName)}
         />
       )}

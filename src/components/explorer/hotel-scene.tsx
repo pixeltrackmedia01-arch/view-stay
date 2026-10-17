@@ -343,9 +343,10 @@ function Building(props: SceneProps & { L: Layout }) {
         const opacity = focus && !isActive ? 0.28 : 1;
         const base = L.levelBase(f.level);
         const above = data.floors.find((x) => x.level === f.level + 1);
-        const showRoof = f.level === topLevel || floorMode === "explode" || (floorMode === "cutaway" && isActive);
-        const roofRects = showRoof ? f.wings : subtractAll(f.wings, above?.wings ?? []);
-        const isTop = f.level === topLevel && floorMode !== "explode" && !(floorMode === "cutaway" && isActive && f.level !== topLevel);
+        // Cutaway and exploded views lift the ceiling off the active floor so every room's status is visible from above.
+        const roofless = (floorMode === "cutaway" && isActive) || floorMode === "explode";
+        const roofRects = roofless ? [] : f.level === topLevel ? f.wings : subtractAll(f.wings, above?.wings ?? []);
+        const isTop = f.level === topLevel && !roofless;
         const roofY = base + FH;
         return (
           <group key={f.id} name={`floor-${f.level}`}>
