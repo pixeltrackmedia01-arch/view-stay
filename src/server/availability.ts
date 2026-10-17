@@ -1,14 +1,8 @@
 import type { Prisma, RoomStatus } from "@prisma/client";
+import type { RoomAvailability } from "@/lib/explorer-types";
 import { db } from "@/lib/db";
 
-export type RoomAvailability =
-  | "AVAILABLE"
-  | "BOOKED"
-  | "HELD"
-  | "HELD_BY_YOU"
-  | "BLOCKED"
-  | "UNAVAILABLE"
-  | "TOO_SMALL";
+export type { RoomAvailability };
 
 type Tx = Prisma.TransactionClient | typeof db;
 
@@ -90,7 +84,7 @@ export async function hotelRoomAvailability(
     }),
     db.roomHold.findMany({
       where: { room: { hotelId }, expiresAt: { gt: now }, ...overlapping(checkIn, checkOut) },
-      select: { roomId: true, userId: true, id: true, expiresAt: true },
+      select: { roomId: true, userId: true, id: true, groupId: true, expiresAt: true },
     }),
   ]);
   const booked = new Set(bookings.map((b) => b.roomId));
@@ -107,6 +101,6 @@ export async function hotelRoomAvailability(
       heldByOther: roomHolds.some((h) => h.userId !== userId),
       heldByYou: !!yours,
     });
-    return { room, status, holdId: yours?.id ?? null };
+    return { room, status, holdGroupId: yours?.groupId ?? null };
   });
 }

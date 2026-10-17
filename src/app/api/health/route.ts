@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const hotels = await db.hotel.count();
+    const hotels = await db.hotel.count({ where: { status: "APPROVED" } });
     return json({ ok: true, db: "up", hotels });
   } catch (e) {
     console.error("[health]", e);

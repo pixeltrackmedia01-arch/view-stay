@@ -1,356 +1,277 @@
-import type { Prisma, ViewType } from "@prisma/client";
+/**
+ * Deterministic, idempotent demo catalogue: 35 destinations x 10 fictional hotels = 350 demo properties.
+ * Every record has a stable ID derived from its natural key, and inserts use skipDuplicates, so running the
+ * seed again never duplicates properties, rooms, photos or bookings. Pass { reset: true } to wipe first.
+ */
+import type { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { DESTINATIONS } from "@/data/destinations";
+import { TEMPLATE_INFO } from "@/lib/catalog-types";
+import { COMMISSION_RATE } from "@/lib/config";
 import { addDays, todayUtc } from "@/lib/dates";
-import { quoteStay, roomNightlyRate } from "@/lib/pricing";
+import { libraryKeys } from "@/lib/media/library";
+import { quoteStay } from "@/lib/pricing";
+import { rng } from "@/lib/random";
+import { slugify } from "@/lib/utils";
+import { HAVELI_REGIONS, NAME_SUFFIX, buildHotelRecords, insertHotelRecords, registerAsset, sid, type AssetRegistry, type PlannedHotel, type RoomMeta } from "./catalog-builder";
 
 export const SEED_PASSWORD = "Password123!";
+export const HOTELS_PER_DESTINATION = 10;
 
-interface RoomTypeSeed {
-  name: string;
-  description: string;
-  bedType: string;
-  maxGuests: number;
-  sizeSqm: number;
-  basePrice: number;
+type Tx = Prisma.TransactionClient;
+
+
+export interface SeedCounts {
+  destinations: number;
+  hotels: number;
+  rooms: number;
+  roomPhotos: number;
+  bookings: number;
+  reviews: number;
 }
 
-interface HotelSeed {
-  slug: string;
-  name: string;
-  city: string;
-  country: string;
-  address: string;
-  description: string;
-  starRating: number;
-  coverHue: number;
-  amenities: string[];
-  owner: "partner" | "partner2";
-  status?: "APPROVED" | "PENDING";
-  floors: number;
-  frontView: ViewType;
-  backView: ViewType;
-  types: RoomTypeSeed[];
-}
-
-const HOTELS: HotelSeed[] = [
-  {
-    slug: "azure-bay-resort-goa",
-    name: "Azure Bay Resort",
-    city: "Goa",
-    country: "India",
-    address: "Candolim Beach Road, North Goa 403515",
-    description:
-      "A breezy beachfront resort where every front-row room looks straight onto the Arabian Sea. Wake to the surf, watch fishing boats at sunset, and pick the exact balcony you want.",
-    starRating: 5,
-    coverHue: 190,
-    amenities: ["Beach access", "Infinity pool", "Spa", "Free Wi-Fi", "Breakfast included", "Airport shuttle"],
-    owner: "partner",
-    floors: 4,
-    frontView: "SEA",
-    backView: "GARDEN",
-    types: [
-      { name: "Deluxe", description: "Bright room with rain shower and work desk", bedType: "Queen", maxGuests: 2, sizeSqm: 28, basePrice: 650000 },
-      { name: "Premium", description: "Larger room with lounge chair and bathtub", bedType: "King", maxGuests: 3, sizeSqm: 36, basePrice: 890000 },
-      { name: "Suite", description: "Separate living area, wraparound windows", bedType: "King + Sofa bed", maxGuests: 4, sizeSqm: 58, basePrice: 1450000 },
-    ],
-  },
-  {
-    slug: "pinecrest-lodge-manali",
-    name: "Pinecrest Lodge",
-    city: "Manali",
-    country: "India",
-    address: "Old Manali Road, Manali, Himachal Pradesh 175131",
-    description:
-      "A timber-and-stone lodge above the Beas valley. Upper-floor rooms frame snow peaks of the Pir Panjal range; corner rooms get two walls of windows.",
-    starRating: 4,
-    coverHue: 150,
-    amenities: ["Mountain view", "Fireplace lounge", "Free Wi-Fi", "Heated rooms", "Restaurant", "Parking"],
-    owner: "partner",
-    floors: 3,
-    frontView: "MOUNTAIN",
-    backView: "GARDEN",
-    types: [
-      { name: "Valley Room", description: "Cosy pine-panelled room", bedType: "Queen", maxGuests: 2, sizeSqm: 24, basePrice: 420000 },
-      { name: "Family Room", description: "Two double beds and a reading nook", bedType: "Two Doubles", maxGuests: 4, sizeSqm: 34, basePrice: 620000 },
-    ],
-  },
-  {
-    slug: "marine-crown-mumbai",
-    name: "Marine Crown",
-    city: "Mumbai",
-    country: "India",
-    address: "Marine Drive, Churchgate, Mumbai 400020",
-    description:
-      "An art-deco landmark on the Queen's Necklace. Choose a sea-facing room over Marine Drive or a quieter city-side room away from the lifts.",
-    starRating: 5,
-    coverHue: 220,
-    amenities: ["Sea view", "Rooftop bar", "Gym", "Free Wi-Fi", "24h room service", "Valet parking"],
-    owner: "partner",
-    floors: 5,
-    frontView: "SEA",
-    backView: "CITY",
-    types: [
-      { name: "Classic", description: "Art-deco styled room", bedType: "Queen", maxGuests: 2, sizeSqm: 25, basePrice: 780000 },
-      { name: "Bay Premium", description: "Larger room with bay window seat", bedType: "King", maxGuests: 3, sizeSqm: 34, basePrice: 1080000 },
-    ],
-  },
-  {
-    slug: "lakeside-haveli-udaipur",
-    name: "Lakeside Haveli",
-    city: "Udaipur",
-    country: "India",
-    address: "Gangaur Ghat, Udaipur, Rajasthan 313001",
-    description:
-      "A restored 18th-century haveli with jharokha windows. Garden rooms open to fountains; upper rooms overlook the pool courtyard and city palace skyline.",
-    starRating: 4,
-    coverHue: 32,
-    amenities: ["Heritage property", "Pool", "Rooftop restaurant", "Free Wi-Fi", "Cultural evenings"],
-    owner: "partner2",
-    floors: 3,
-    frontView: "POOL",
-    backView: "COURTYARD",
-    types: [
-      { name: "Heritage", description: "Hand-painted walls and carved furniture", bedType: "King", maxGuests: 2, sizeSqm: 30, basePrice: 540000 },
-      { name: "Royal Suite", description: "Jharokha balcony and sitting room", bedType: "King + Daybed", maxGuests: 3, sizeSqm: 52, basePrice: 1150000 },
-    ],
-  },
-  {
-    slug: "teahill-retreat-munnar",
-    name: "Teahill Retreat",
-    city: "Munnar",
-    country: "India",
-    address: "Chithirapuram, Munnar, Kerala 685565",
-    description: "Perched over rolling tea estates. Every hill-side room has a balcony with mist-covered mountain views at sunrise.",
-    starRating: 4,
-    coverHue: 110,
-    amenities: ["Mountain view", "Plantation walks", "Ayurvedic spa", "Free Wi-Fi", "Breakfast included"],
-    owner: "partner2",
-    floors: 2,
-    frontView: "MOUNTAIN",
-    backView: "GARDEN",
-    types: [
-      { name: "Estate Room", description: "Warm room with planter's chair", bedType: "Queen", maxGuests: 2, sizeSqm: 26, basePrice: 380000 },
-      { name: "Hill Villa", description: "Spacious villa room with sit-out", bedType: "King", maxGuests: 4, sizeSqm: 44, basePrice: 720000 },
-    ],
-  },
-  {
-    slug: "pink-city-courtyard-jaipur",
-    name: "Pink City Courtyard",
-    city: "Jaipur",
-    country: "India",
-    address: "MI Road, Jaipur, Rajasthan 302001",
-    description: "A boutique stay awaiting marketplace approval — visible to partners and admins only.",
-    starRating: 3,
-    coverHue: 340,
-    amenities: ["Pool", "Free Wi-Fi", "Rooftop cafe"],
-    owner: "partner2",
-    status: "PENDING",
-    floors: 2,
-    frontView: "CITY",
-    backView: "POOL",
-    types: [{ name: "Standard", description: "Simple, comfortable room", bedType: "Queen", maxGuests: 2, sizeSqm: 20, basePrice: 290000 }],
-  },
-];
-
-// Floor grid: 14 wide x 6 tall. Rooms in front row (y=0) face the hotel's primary view;
-// back row (y=4) faces the secondary view. Lift in the centre of the front row.
-const WIDTH = 14;
-const FRONT_SLOTS = [0, 2, 4, 8, 10, 12];
-const BACK_SLOTS = [0, 2, 4, 6, 8, 10, 12];
-
-function typeForSlot<T>(types: T[], row: "front" | "back", idx: number, slots: number[]) {
-  const last = types.length - 1;
-  if (row === "front" && (idx === 0 || idx === slots.length - 1)) return types[last]; // corner premium
-  if (row === "front") return types[Math.min(1, last)];
-  return types[0];
-}
-
-/** Load demo data. With `reset`, existing rows are deleted first (children before parents). */
-export async function seedDatabase(db: Prisma.TransactionClient, { reset = false }: { reset?: boolean } = {}) {
+export async function seedDatabase(db: Tx, { reset = false, log = () => {} }: { reset?: boolean; log?: (m: string) => void } = {}): Promise<SeedCounts> {
   if (reset) {
-    await db.auditLog.deleteMany();
-    await db.review.deleteMany();
-    await db.payment.deleteMany();
-    await db.booking.deleteMany();
-    await db.roomHold.deleteMany();
-    await db.roomBlock.deleteMany();
-    await db.wishlist.deleteMany();
-    await db.room.deleteMany();
-    await db.mapElement.deleteMany();
-    await db.floor.deleteMany();
-    await db.roomType.deleteMany();
-    await db.hotel.deleteMany();
-    await db.user.deleteMany();
-  }
-
-  const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
-  const mk = (email: string, name: string, role: "CUSTOMER" | "PARTNER" | "ADMIN", phone?: string) =>
-    db.user.create({ data: { email, name, role, passwordHash, phone } });
-  const admin = await mk("admin@viewstay.dev", "Asha Admin", "ADMIN");
-  const partner = await mk("partner@viewstay.dev", "Rahul Partner", "PARTNER", "+91 98200 11111");
-  const partner2 = await mk("partner2@viewstay.dev", "Meera Hoteliers", "PARTNER", "+91 98200 22222");
-  const customer = await mk("customer@viewstay.dev", "Priya Traveller", "CUSTOMER", "+91 98765 43210");
-  const customer2 = await mk("guest@viewstay.dev", "Arjun Guest", "CUSTOMER", "+91 99887 76655");
-  const owners = { partner, partner2 };
-
-  const allRooms: { id: string; hotelId: string; basePrice: number; priceAdjustment: number; maxGuests: number; number: string }[] = [];
-
-  for (const h of HOTELS) {
-    const hotel = await db.hotel.create({
-      data: {
-        slug: h.slug,
-        name: h.name,
-        city: h.city,
-        country: h.country,
-        address: h.address,
-        description: h.description,
-        starRating: h.starRating,
-        coverHue: h.coverHue,
-        amenities: h.amenities,
-        status: h.status ?? "APPROVED",
-        ownerId: owners[h.owner].id,
-      },
-    });
-    const types = [];
-    for (const t of h.types) types.push(await db.roomType.create({ data: { ...t, hotelId: hotel.id } }));
-
-    for (let level = 1; level <= h.floors; level++) {
-      const floor = await db.floor.create({
-        data: {
-          hotelId: hotel.id,
-          level,
-          name: level === 1 ? "First floor" : `Floor ${level}`,
-          width: WIDTH,
-          height: 6,
-          elements: {
-            create: [
-              { kind: "CORRIDOR", label: "Corridor", x: 0, y: 2, w: WIDTH, h: 2 },
-              { kind: "ELEVATOR", label: "Lift", x: 6, y: 0, w: 2, h: 2 },
-              { kind: "SERVICE", label: "Ice & laundry", x: 12, y: 4, w: 2, h: 2 },
-            ],
-          },
-        },
-      });
-      let n = 1;
-      const rows: ["front" | "back", number[], number][] = [
-        ["front", FRONT_SLOTS, 0],
-        ["back", BACK_SLOTS.slice(0, 6), 4],
-      ];
-      for (const [row, slots, y] of rows) {
-        for (let i = 0; i < slots.length; i++) {
-          const x = slots[i];
-          const type = typeForSlot(types, row, i, slots);
-          const isCorner = x === 0 || x === WIDTH - 2 || (row === "back" && x === 10);
-          const nearElevator = row === "front" ? x === 4 || x === 8 : x === 6;
-          const view = row === "front" ? h.frontView : h.backView;
-          const viewScore = Math.min(
-            98,
-            (row === "front" ? 62 : 38) + level * (row === "front" ? 7 : 3) + (isCorner ? 6 : 0) - (nearElevator ? 4 : 0),
-          );
-          const hasBalcony = row === "front" ? level >= 2 || isCorner : isCorner && level >= 2;
-          const priceAdjustment = (level - 1) * 25000 + (isCorner ? 40000 : 0) + (hasBalcony ? 30000 : 0) - (nearElevator ? 20000 : 0);
-          const room = await db.room.create({
-            data: {
-              hotelId: hotel.id,
-              floorId: floor.id,
-              roomTypeId: type.id,
-              number: `${level}${String(n++).padStart(2, "0")}`,
-              x,
-              y,
-              w: 2,
-              h: 2,
-              viewType: view,
-              viewScore,
-              viewVerified: row === "front",
-              hasBalcony,
-              isCorner,
-              windowCount: isCorner ? 2 : 1,
-              nearElevator,
-              accessible: level === 1 && i === 1,
-              priceAdjustment,
-              notes: isCorner && row === "front" ? "Corner room with two large windows" : nearElevator ? "Next to the lift lobby" : null,
-              // A room under maintenance to demonstrate status handling
-              status: level === 2 && row === "back" && i === 2 ? "MAINTENANCE" : "ACTIVE",
-            },
-          });
-          allRooms.push({ id: room.id, hotelId: hotel.id, basePrice: type.basePrice, priceAdjustment, maxGuests: type.maxGuests, number: room.number });
-        }
-      }
+    log("Resetting database");
+    for (const model of [
+      "auditLog", "emailMessage", "passwordResetToken", "review", "payment", "booking", "roomHold", "roomBlock", "wishlist",
+      "roomPhoto", "hotelPhoto", "room", "mapElement", "floor", "roomType", "hotel", "destination", "mediaAsset", "user",
+    ] as const) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (db[model] as any).deleteMany();
     }
   }
 
-  // Bookings: completed past stays (with reviews) and upcoming stays across hotels.
-  const today = todayUtc();
-  let seq = 1;
-  const book = async (roomIdx: number, userId: string, startOffset: number, nights: number, status: "CONFIRMED" | "COMPLETED" | "CANCELLED") => {
-    const r = allRooms[roomIdx];
-    const checkIn = addDays(today, startOffset);
-    const checkOut = addDays(checkIn, nights);
-    const q = quoteStay(roomNightlyRate(r.basePrice, r.priceAdjustment), checkIn, checkOut);
-    const user = userId === customer.id ? customer : customer2;
-    return db.booking.create({
-      data: {
-        code: `VS-SEED${String(seq++).padStart(4, "0")}`,
-        userId,
-        hotelId: r.hotelId,
-        roomId: r.id,
-        checkIn,
-        checkOut,
-        nights,
-        guests: Math.min(2, r.maxGuests),
-        guestName: user.name,
-        guestEmail: user.email,
-        guestPhone: user.phone ?? "+91 90000 00000",
-        nightlyRate: q.nightlyBase,
-        subtotal: q.subtotal,
-        taxes: q.taxes,
-        total: q.total,
-        status,
-        cancelledAt: status === "CANCELLED" ? addDays(today, -1) : null,
-        createdAt: addDays(today, Math.min(-1, startOffset - 14 + (seq % 10))),
-        payments: {
-          create: {
-            reference: `pay_seed_${seq}`,
-            amount: q.total,
-            cardLast4: "4242",
-            status: status === "CANCELLED" ? "REFUNDED" : "SUCCEEDED",
-          },
-        },
-      },
-    });
-  };
+  // ------------------------------------------------------------ users
+  const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
+  const users: Prisma.UserCreateManyInput[] = [
+    { id: sid("usr", "admin"), email: "admin@viewstay.dev", name: "Asha Rao", role: "ADMIN", passwordHash },
+    { id: sid("usr", "partner"), email: "partner@viewstay.dev", name: "Rahul Mehta", role: "PARTNER", passwordHash, phone: "+91 98200 11111" },
+    { id: sid("usr", "customer"), email: "customer@viewstay.dev", name: "Priya Sharma", role: "CUSTOMER", passwordHash, phone: "+91 98765 43210" },
+    { id: sid("usr", "guest"), email: "guest@viewstay.dev", name: "Arjun Nair", role: "CUSTOMER", passwordHash, phone: "+91 99887 76655" },
+  ];
+  const partnerCompanies = ["Himalayan Hosts", "Coastline Hospitality", "Heritage Stays Co.", "Urban Nest Hotels", "Greenleaf Retreats", "Lakeview Collection", "Sahyadri Hospitality"];
+  partnerCompanies.forEach((name, i) =>
+    users.push({ id: sid("usr", `partner${i + 2}`), email: `partner${i + 2}@viewstay.dev`, name, role: "PARTNER", passwordHash, phone: `+91 98200 2${String(i).padStart(4, "0")}` }),
+  );
+  const travellerNames = ["Ananya Iyer", "Vikram Singh", "Meera Pillai", "Rohan Das", "Kavya Reddy", "Aditya Joshi", "Sneha Kulkarni", "Karan Malhotra", "Isha Banerjee", "Nikhil Verma", "Diya Kapoor", "Siddharth Rao", "Tara Menon", "Aarav Gupta", "Pooja Shetty", "Rahul Bose", "Neha Chawla", "Varun Nair", "Ritika Sen", "Manav Shah", "Lakshmi Krishnan", "Farhan Qureshi", "Gauri Deshpande", "Ishaan Mathur", "Zoya Ahmed", "Dev Patel", "Nandini Ghosh", "Arnav Bhatt", "Simran Gill", "Kabir Arora"];
+  travellerNames.forEach((name, i) => users.push({ id: sid("usr", `traveller${i}`), email: `traveller${String(i + 1).padStart(2, "0")}@viewstay.dev`, name, role: "CUSTOMER", passwordHash }));
+  await db.user.createMany({ data: users, skipDuplicates: true });
+  const userIdByEmail = new Map((await db.user.findMany({ where: { email: { in: users.map((u) => u.email) } }, select: { id: true, email: true } })).map((u) => [u.email, u.id]));
+  const uid = (email: string) => userIdByEmail.get(email)!;
+  const partnerIds = ["partner@viewstay.dev", ...partnerCompanies.map((_, i) => `partner${i + 2}@viewstay.dev`)].map(uid);
+  const travellerIds = travellerNames.map((_, i) => uid(`traveller${String(i + 1).padStart(2, "0")}@viewstay.dev`));
 
-  const past1 = await book(2, customer.id, -20, 3, "COMPLETED");
-  const past2 = await book(72, customer.id, -12, 2, "COMPLETED");
-  const past3 = await book(5, customer2.id, -9, 4, "COMPLETED");
-  await book(70, customer2.id, -6, 2, "COMPLETED");
-  await book(3, customer.id, 7, 3, "CONFIRMED");
-  await book(0, customer2.id, 1, 2, "CONFIRMED");
-  await book(1, customer2.id, 2, 5, "CONFIRMED");
-  await book(8, customer2.id, 3, 2, "CONFIRMED");
-  await book(41, customer2.id, 1, 3, "CONFIRMED");
-  await book(75, customer2.id, 4, 2, "CONFIRMED");
-  await book(100, customer.id, 15, 2, "CANCELLED");
-  for (let i = 0; i < 18; i++) {
-    // Spread of recent bookings for dashboard charts
-    await book(12 + i * 3, i % 2 ? customer2.id : customer.id, 20 + i * 2, 1 + (i % 3), "CONFIRMED");
+  // ------------------------------------------------------------ media manifest (collected as we go)
+  const assets: AssetRegistry = new Map();
+  const addAsset = (key: string) => registerAsset(assets, key);
+
+  // ------------------------------------------------------------ destinations
+  const destIds = new Map<string, string>();
+  for (const d of DESTINATIONS) addAsset(libraryKeys.destination(d.slug));
+  // Assets must exist before destinations reference them as heroes.
+  await db.mediaAsset.createMany({ data: [...assets.values()], skipDuplicates: true });
+  for (const [i, d] of DESTINATIONS.entries()) {
+    const heroKey = libraryKeys.destination(d.slug);
+    const hero = await db.mediaAsset.findUnique({ where: { key: heroKey }, select: { id: true } });
+    const row = await db.destination.upsert({
+      where: { slug: d.slug },
+      create: {
+        id: sid("dst", d.slug),
+        slug: d.slug, name: d.name, state: d.state, region: d.region, tagline: d.tagline, description: d.description,
+        latitude: d.latitude, longitude: d.longitude, themes: d.themes, attractions: d.attractions, featured: !!d.featured, sortOrder: i, heroAssetId: hero?.id,
+      },
+      update: {
+        name: d.name, state: d.state, region: d.region, tagline: d.tagline, description: d.description,
+        latitude: d.latitude, longitude: d.longitude, themes: d.themes, attractions: d.attractions, featured: !!d.featured, sortOrder: i, heroAssetId: hero?.id,
+      },
+      select: { id: true },
+    });
+    destIds.set(d.slug, row.id);
+  }
+  log(`Destinations: ${DESTINATIONS.length}`);
+
+  // ------------------------------------------------------------ hotels
+  const planned: PlannedHotel[] = [];
+  const usedSlugs = new Set<string>();
+  let partnerCursor = 0;
+  for (const [di, dest] of DESTINATIONS.entries()) {
+    const r = rng(`hotels:${dest.slug}`);
+    for (let i = 0; i < HOTELS_PER_DESTINATION; i++) {
+      const template = dest.templates[(i + Math.floor(di / 3)) % dest.templates.length];
+      const suffixes = template === "HERITAGE_BOUTIQUE" && HAVELI_REGIONS.has(dest.region) ? ["Haveli", "Mahal Residency", "Heritage Haveli", "Kothi", "Bagh House"] : NAME_SUFFIX[template];
+      const word = dest.nameWords[i % dest.nameWords.length];
+      let name = `${word} ${suffixes[(i + di) % suffixes.length]}`;
+      let slug = slugify(`${name}-${dest.slug}`);
+      if (usedSlugs.has(slug)) {
+        name = `The ${name}`;
+        slug = slugify(`${name}-${dest.slug}`);
+      }
+      usedSlugs.add(slug);
+      const frontView = i % 3 === 2 && dest.views[1] ? dest.views[1] : dest.views[0];
+      const backView = dest.views.find((v) => v !== frontView) ?? "GARDEN";
+      // The demo partner manages the first two hotels of the first six featured destinations.
+      const featuredIdx = DESTINATIONS.filter((d) => d.featured).findIndex((d) => d.slug === dest.slug);
+      const ownerId = featuredIdx >= 0 && featuredIdx < 6 && i < 2 ? partnerIds[0] : partnerIds[1 + (partnerCursor++ % (partnerIds.length - 1))];
+      planned.push({
+        id: sid("htl", `${dest.slug}:${i}`),
+        dest,
+        destinationId: destIds.get(dest.slug)!,
+        index: i,
+        name,
+        slug,
+        template,
+        style: TEMPLATE_INFO[template].interiorStyle,
+        stars: r.pick([3, 4, 4, 4, 5, 5]),
+        palette: (i + di) % 3,
+        frontView,
+        backView,
+        ownerId,
+        // Two newly-listed demo properties await admin approval.
+        status: (dest.slug === "goa" || dest.slug === "jaipur") && i === 9 ? "PENDING" : "APPROVED",
+        featured: !!dest.featured && i === 0,
+        isDemo: true,
+      });
+    }
   }
 
-  await db.review.createMany({
-    data: [
-      { bookingId: past1.id, hotelId: past1.hotelId, userId: customer.id, rating: 5, comment: "Picked room 103 for the sea view and it was exactly as shown on the map. Magical sunsets." },
-      { bookingId: past2.id, hotelId: past2.hotelId, userId: customer.id, rating: 4, comment: "Loved choosing a high corner room away from the lift. Very quiet, great valley view." },
-      { bookingId: past3.id, hotelId: past3.hotelId, userId: customer2.id, rating: 5, comment: "The balcony room was worth every rupee. Being able to pick it in advance is a game changer." },
-    ],
+  const records = planned.map((h) => buildHotelRecords(h, assets));
+  const hotelRows = records.map((r) => r.hotel);
+  const roomMeta = records.flatMap((r) => r.roomMeta);
+  await insertHotelRecords(db, records, assets);
+  log(`Media assets: ${assets.size}`);
+  log(`Hotels: ${hotelRows.length}, rooms: ${records.reduce((s, r) => s + r.rooms.length, 0)}, room photos: ${records.reduce((s, r) => s + r.roomPhotos.length, 0)}`);
+
+  // ------------------------------------------------------------ demo bookings and reviews
+  const today = todayUtc();
+  const bookingRows: Prisma.BookingCreateManyInput[] = [];
+  const paymentRows: Prisma.PaymentCreateManyInput[] = [];
+  const reviewRows: Prisma.ReviewCreateManyInput[] = [];
+  const occupied = new Map<string, [number, number][]>();
+  const approved = new Set(hotelRows.filter((h) => h.status === "APPROVED").map((h) => h.id));
+  const roomsByHotel = new Map<string, typeof roomMeta>();
+  for (const m of roomMeta) {
+    if (!approved.has(m.hotelId)) continue;
+    const list = roomsByHotel.get(m.hotelId) ?? [];
+    list.push(m);
+    roomsByHotel.set(m.hotelId, list);
+  }
+  const userNames = new Map(users.map((u) => [u.id ?? "", u]));
+  for (const u of users) if (u.id) userNames.set(userIdByEmail.get(u.email)!, u);
+
+  const reviewTexts = [
+    (m: RoomMeta) => `We picked room ${m.number} from the floor plan for the ${m.view.toLowerCase()} view and it was exactly as described. Would book the same room again.`,
+    (m: RoomMeta) => `Being able to choose a ${m.level >= 3 ? "high-floor" : "quiet"} room before arriving made the stay. Staff were warm and check-in was quick.`,
+    (m: RoomMeta) => `${m.hasBalcony ? "The balcony was the highlight — " : ""}lovely room, comfortable bed and a great breakfast. Room ${m.number} is a good pick.`,
+    () => "Clean, calm and well located. The room photos on the listing were representative, though the real view was even better.",
+    () => "Good value for the location. Corridor noise was minimal and housekeeping was excellent.",
+    () => "Comfortable stay overall. Wi-Fi was a little slow in the evenings but everything else was great.",
+  ];
+
+  let seq = 0;
+  const addBooking = (m: RoomMeta, userId: string, start: number, nights: number, status: "CONFIRMED" | "COMPLETED" | "CANCELLED", review?: { rating: number; text: string }) => {
+    const span: [number, number] = [start, start + nights];
+    const list = occupied.get(m.id) ?? [];
+    if (status !== "CANCELLED" && list.some(([a, b]) => span[0] < b && span[1] > a)) return false;
+    if (status !== "CANCELLED") list.push(span);
+    occupied.set(m.id, list);
+    const checkIn = addDays(today, start);
+    const checkOut = addDays(checkIn, nights);
+    const q = quoteStay(m.nightly, checkIn, checkOut);
+    const n = seq++;
+    const id = sid("bkg", `demo:${n}`);
+    const u = userNames.get(userId)!;
+    bookingRows.push({
+      id,
+      code: `VS-D${n.toString(36).toUpperCase().padStart(6, "0")}`,
+      userId,
+      hotelId: m.hotelId,
+      roomId: m.id,
+      checkIn,
+      checkOut,
+      nights,
+      guests: Math.min(2, m.maxGuests),
+      guestName: u.name,
+      guestEmail: u.email,
+      guestPhone: u.phone ?? "+91 90000 00000",
+      nightlyRate: q.nightlyBase,
+      subtotal: q.subtotal,
+      discount: q.discount,
+      taxes: q.taxes,
+      total: q.total,
+      commission: Math.round(q.total * COMMISSION_RATE),
+      status,
+      cancelledAt: status === "CANCELLED" ? addDays(today, -1) : null,
+      createdAt: addDays(today, Math.min(-1, start - 20 - (n % 25))),
+    });
+    paymentRows.push({ id: sid("pay", `demo:${n}`), bookingId: id, reference: `pay_demo_${n}`, amount: q.total, cardLast4: "4242", status: status === "CANCELLED" ? "REFUNDED" : "SUCCEEDED" });
+    if (review && status === "COMPLETED") reviewRows.push({ id: sid("rev", `demo:${n}`), bookingId: id, hotelId: m.hotelId, userId, rating: review.rating, comment: review.text, createdAt: addDays(checkOut, 1) });
+    return true;
+  };
+
+  for (const [hotelId, rooms] of roomsByHotel) {
+    const r = rng(`bookings:${hotelId}`);
+    const pastStays = r.int(3, 9);
+    for (let i = 0; i < pastStays; i++) {
+      const m = r.pick(rooms);
+      const nights = r.int(1, 4);
+      const start = -r.int(nights + 2, 160);
+      const rating = r.pick([3, 4, 4, 4, 5, 5, 5, 5]);
+      addBooking(m, r.pick(travellerIds), start, nights, "COMPLETED", r.chance(0.85) ? { rating, text: r.pick(reviewTexts)(m) } : undefined);
+    }
+    const upcoming = r.int(2, 7);
+    for (let i = 0; i < upcoming; i++) {
+      const m = r.pick(rooms);
+      const nights = r.int(1, 5);
+      addBooking(m, r.pick(travellerIds), r.int(1, 60), nights, "CONFIRMED");
+    }
+  }
+
+  // Scenario bookings for the demo customer accounts.
+  const customer = uid("customer@viewstay.dev");
+  const guest = uid("guest@viewstay.dev");
+  const roomsOf = (destSlug: string, hotelIndex: number) => roomsByHotel.get(sid("htl", `${destSlug}:${hotelIndex}`)) ?? [];
+  const pickRoom = (destSlug: string, hotelIndex: number, prefer: (m: RoomMeta) => boolean) => {
+    const rooms = roomsOf(destSlug, hotelIndex);
+    return rooms.find(prefer) ?? rooms[0];
+  };
+  const scenarios: [ReturnType<typeof pickRoom>, string, number, number, "CONFIRMED" | "COMPLETED" | "CANCELLED", { rating: number; text: string } | undefined][] = [
+    [pickRoom("manali", 0, (m) => m.view === "MOUNTAIN" && m.level >= 2), customer, -40, 3, "COMPLETED", { rating: 5, text: "Chose a high-floor mountain-facing room on the floor plan and woke up to the snowline. Exactly the room we wanted." }],
+    [pickRoom("goa", 0, (m) => m.view === "SEA" && m.hasBalcony), customer, -15, 2, "COMPLETED", undefined],
+    [pickRoom("udaipur", 0, (m) => m.view === "LAKE"), customer, 12, 3, "CONFIRMED", undefined],
+    [pickRoom("munnar", 1, (m) => m.hasBalcony), customer, 30, 2, "CONFIRMED", undefined],
+    [pickRoom("jaipur", 0, (m) => m.view === "COURTYARD"), customer, 20, 2, "CANCELLED", undefined],
+    [pickRoom("srinagar", 0, (m) => m.view === "LAKE"), guest, 5, 4, "CONFIRMED", undefined],
+  ];
+  for (const [m, user, start, nights, status, review] of scenarios) if (m) addBooking(m, user, start, nights, status, review);
+
+  const chunked = async <T>(rows: T[], size: number, fn: (part: T[]) => Promise<unknown>) => {
+    for (let k = 0; k < rows.length; k += size) await fn(rows.slice(k, k + size));
+  };
+  await chunked(bookingRows, 1000, (data) => db.booking.createMany({ data, skipDuplicates: true }));
+  await chunked(paymentRows, 2000, (data) => db.payment.createMany({ data, skipDuplicates: true }));
+  await chunked(reviewRows, 2000, (data) => db.review.createMany({ data, skipDuplicates: true }));
+  log(`Bookings: ${bookingRows.length}, reviews: ${reviewRows.length}`);
+
+  // Denormalised rating summary on every hotel (kept in sync when reviews are added).
+  await db.$executeRaw`
+    UPDATE "Hotel" h SET "ratingAvg" = s.avg, "reviewCount" = s.cnt
+    FROM (SELECT "hotelId", AVG(rating)::float AS avg, COUNT(*)::int AS cnt FROM "Review" GROUP BY "hotelId") s
+    WHERE s."hotelId" = h.id`;
+
+  const manali = roomsOf("manali", 0);
+  if (manali[3]) await db.roomBlock.createMany({ data: [{ id: sid("blk", "demo:1"), roomId: manali[3].id, startDate: addDays(today, 2), endDate: addDays(today, 5), reason: "Repainting" }], skipDuplicates: true });
+  await db.wishlist.createMany({
+    data: [sid("htl", "udaipur:1"), sid("htl", "munnar:0"), sid("htl", "goa:2")].map((hotelId) => ({ userId: customer, hotelId })),
+    skipDuplicates: true,
   });
 
-  // A maintenance block on one room for the next few days
-  await db.roomBlock.create({
-    data: { roomId: allRooms[9].id, startDate: addDays(today, 2), endDate: addDays(today, 5), reason: "Repainting" },
-  });
-  await db.wishlist.create({ data: { userId: customer.id, hotelId: allRooms[72].hotelId } });
-
-  const counts = { users: await db.user.count(), hotels: await db.hotel.count(), rooms: await db.room.count(), bookings: await db.booking.count() };
-  void admin;
-  return counts;
+  return {
+    destinations: DESTINATIONS.length,
+    hotels: hotelRows.length,
+    rooms: records.reduce((s, r) => s + r.rooms.length, 0),
+    roomPhotos: records.reduce((s, r) => s + r.roomPhotos.length, 0),
+    bookings: bookingRows.length,
+    reviews: reviewRows.length,
+  };
 }

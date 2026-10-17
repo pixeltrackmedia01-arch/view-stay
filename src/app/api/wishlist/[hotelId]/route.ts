@@ -8,13 +8,8 @@ type Ctx = { params: Promise<{ hotelId: string }> };
 export const POST = route<Ctx>(async (_req, { params }) => {
   const user = await requireUser();
   const { hotelId } = await params;
-  const hotel = await db.hotel.findFirst({ where: { id: hotelId, status: "APPROVED" } });
-  if (!hotel) throw new AppError("NOT_FOUND", "Hotel not found");
-  await db.wishlist.upsert({
-    where: { userId_hotelId: { userId: user.id, hotelId } },
-    create: { userId: user.id, hotelId },
-    update: {},
-  });
+  if (!(await db.hotel.findFirst({ where: { id: hotelId, status: "APPROVED" }, select: { id: true } }))) throw new AppError("NOT_FOUND", "Hotel not found");
+  await db.wishlist.upsert({ where: { userId_hotelId: { userId: user.id, hotelId } }, create: { userId: user.id, hotelId }, update: {} });
   return json({ saved: true });
 });
 

@@ -1,25 +1,35 @@
+import { AlertCircle, CheckCircle2, Info, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tones = {
-  slate: "bg-slate-100 text-slate-700",
-  green: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
-  amber: "bg-amber-50 text-amber-800 ring-amber-600/20",
-  rose: "bg-rose-50 text-rose-700 ring-rose-600/20",
-  blue: "bg-sky-50 text-sky-700 ring-sky-600/20",
-  brand: "bg-brand-50 text-brand-700 ring-brand-600/20",
+  neutral: "bg-subtle text-ink-2 ring-line",
+  primary: "bg-primary text-white ring-primary",
+  accent: "bg-accent-soft text-primary-dark ring-accent/40",
+  success: "bg-available-soft text-available ring-available/25",
+  warning: "bg-warning-soft text-warning ring-warning/25",
+  danger: "bg-danger-soft text-danger ring-danger/25",
+  info: "bg-info-soft text-info ring-info/25",
+  glass: "bg-white/90 text-ink ring-white/60 backdrop-blur",
 } as const;
 
-export type BadgeTone = keyof typeof tones;
+export type Tone = keyof typeof tones;
 
-export function Badge({ tone = "slate", className, ...props }: React.HTMLAttributes<HTMLSpanElement> & { tone?: BadgeTone }) {
-  return (
-    <span
-      className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ring-transparent", tones[tone], className)}
-      {...props}
-    />
-  );
+export function Badge({ tone = "neutral", className, ...props }: React.HTMLAttributes<HTMLSpanElement> & { tone?: Tone }) {
+  return <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset", tones[tone], className)} {...props} />;
 }
 
-export function Alert({ tone = "rose", className, ...props }: React.HTMLAttributes<HTMLDivElement> & { tone?: BadgeTone }) {
-  return <div role="alert" className={cn("rounded-lg px-4 py-3 text-sm ring-1 ring-inset", tones[tone], className)} {...props} />;
+const alertIcons = { info: Info, success: CheckCircle2, warning: TriangleAlert, danger: AlertCircle } as const;
+
+export function Alert({ tone = "danger", title, children, className, action }: { tone?: keyof typeof alertIcons; title?: string; children?: React.ReactNode; className?: string; action?: React.ReactNode }) {
+  const Icon = alertIcons[tone];
+  return (
+    <div role={tone === "danger" || tone === "warning" ? "alert" : "status"} className={cn("flex gap-3 rounded-[var(--radius-md)] px-4 py-3 text-sm ring-1 ring-inset", tones[tone], className)}>
+      <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <div className="min-w-0 flex-1">
+        {title && <p className="font-semibold">{title}</p>}
+        {children && <div className={cn(title && "mt-0.5", "text-ink-2 [&_a]:underline")}>{children}</div>}
+      </div>
+      {action}
+    </div>
+  );
 }

@@ -45,7 +45,7 @@ export const loginInput = z.object({
 });
 export type LoginInput = z.infer<typeof loginInput>;
 
-export const holdInput = z.object({ roomId: z.string().min(1) }).and(stayInput);
+export const holdInput = z.object({ roomIds: z.array(z.string().min(1).max(64)).min(1).max(4) }).and(stayInput);
 export type HoldInput = z.infer<typeof holdInput>;
 
 export const guestDetails = z.object({
@@ -66,7 +66,10 @@ export const cardDetails = z.object({
 });
 
 export const checkoutInput = z.object({
-  holdId: z.string().min(1),
+  holdGroupId: z.string().uuid(),
+  ratePlan: z.enum(["FLEXIBLE", "NON_REFUNDABLE"]).default("FLEXIBLE"),
+  /** Total the customer saw; if the server's price differs the request is rejected with PRICE_CHANGED. */
+  expectedTotal: z.number().int().nonnegative(),
   guest: guestDetails,
   card: cardDetails,
 });
@@ -77,7 +80,8 @@ export const reviewInput = z.object({
   comment: z.string().trim().min(10, "Tell us a little more (10+ characters)").max(1000),
 });
 
-export const VIEW_TYPES = ["SEA", "MOUNTAIN", "CITY", "GARDEN", "POOL", "COURTYARD", "NONE"] as const;
+export const VIEW_TYPES = ["SEA", "LAKE", "RIVER", "MOUNTAIN", "VALLEY", "GARDEN", "CITY", "COURTYARD", "POOL", "NONE"] as const;
+export const SIDE_VALUES = ["TOP", "RIGHT", "BOTTOM", "LEFT"] as const;
 
 export const roomUpdateInput = z.object({
   status: z.enum(["ACTIVE", "MAINTENANCE", "INACTIVE"]).optional(),
@@ -89,8 +93,66 @@ export const roomUpdateInput = z.object({
   isCorner: z.boolean().optional(),
   accessible: z.boolean().optional(),
   windowCount: z.coerce.number().int().min(0).max(10).optional(),
+  windowSide: z.enum(SIDE_VALUES).optional(),
+  secondaryWindowSide: z.enum(SIDE_VALUES).nullable().optional(),
+  balconySide: z.enum(SIDE_VALUES).nullable().optional(),
+  bedType: z.enum(["Queen", "Twin", "King", "King + Sofa bed"]).optional(),
+  nearElevator: z.boolean().optional(),
   notes: z.string().trim().max(300).optional().nullable(),
 });
+
+/** Floor-plan editor payload: the full room layout of one floor. */
+export const floorLayoutInput = z.object({
+  rooms: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(64).optional(),
+        number: z.string().trim().regex(/^[0-9A-Z-]{1,8}$/, "Room numbers use digits, capitals or dashes"),
+        roomTypeId: z.string().min(1),
+        x: z.number().int().min(0).max(60),
+        y: z.number().int().min(0).max(60),
+        w: z.number().int().min(2).max(12),
+        h: z.number().int().min(2).max(12),
+        windowSide: z.enum(SIDE_VALUES),
+        secondaryWindowSide: z.enum(SIDE_VALUES).nullable(),
+        balconySide: z.enum(SIDE_VALUES).nullable(),
+        viewType: z.enum(VIEW_TYPES),
+      }),
+    )
+    .max(80),
+});
+export type FloorLayoutInput = z.infer<typeof floorLayoutInput>;
+
+export const profileInput = z.object({
+  name: z.string().trim().min(2, "Enter your name").max(80),
+  phone: z.string().trim().regex(/^\+?[0-9 ()-]{7,20}$/, "Enter a valid phone number").optional().or(z.literal("")),
+});
+
+export const changePasswordInput = z.object({
+  currentPassword: z.string().min(1, "Enter your current password"),
+  newPassword: z.string().min(8, "Use at least 8 characters").max(100),
+});
+
+export const forgotPasswordInput = z.object({ email: z.string().trim().toLowerCase().email("Enter a valid email") });
+export const resetPasswordInput = z.object({
+  token: z.string().min(20).max(200),
+  password: z.string().min(8, "Use at least 8 characters").max(100),
+});
+
+export const hotelProfileInput = z.object({
+  name: z.string().trim().min(3).max(80),
+  description: z.string().trim().min(20).max(2000),
+  address: z.string().trim().min(5).max(200),
+  neighborhood: z.string().trim().max(120),
+  amenities: z.array(z.string().trim().min(1).max(40)).max(20),
+  highlights: z.array(z.string().trim().min(1).max(120)).max(8),
+  houseRules: z.array(z.string().trim().min(1).max(160)).max(12),
+  checkInTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM"),
+  checkOutTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM"),
+  cancellationPolicy: z.enum(["FLEXIBLE", "MODERATE", "STRICT"]),
+});
+
+export const roomTypePriceInput = z.object({ basePrice: z.coerce.number().int().min(500_00).max(1_000_000_00) });
 
 export const blockInput = z
   .object({
@@ -106,16 +168,14 @@ export const blockInput = z
 export const hotelCreateInput = z.object({
   name: z.string().trim().min(3).max(80),
   description: z.string().trim().min(20, "Describe the property (20+ characters)").max(2000),
-  city: z.string().trim().min(2).max(60),
-  country: z.string().trim().min(2).max(60),
+  destinationId: z.string().min(1, "Choose a destination"),
   address: z.string().trim().min(5).max(200),
   starRating: z.coerce.number().int().min(1).max(5),
   amenities: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
-  floors: z.coerce.number().int().min(1).max(10),
-  roomsPerFloor: z.coerce.number().int().min(2).max(10),
-  roomTypeName: z.string().trim().min(2).max(40),
+  template: z.enum(["MOUNTAIN_LODGE", "HERITAGE_BOUTIQUE", "CITY_MODERN", "COASTAL_RESORT", "GARDEN_RETREAT"]),
+  palette: z.coerce.number().int().min(0).max(2).default(0),
   basePrice: z.coerce.number().int().min(500_00).max(1_000_000_00),
-  maxGuests: z.coerce.number().int().min(1).max(8),
-  primaryView: z.enum(VIEW_TYPES),
+  frontView: z.enum(VIEW_TYPES),
+  backView: z.enum(VIEW_TYPES),
 });
 export type HotelCreateInput = z.infer<typeof hotelCreateInput>;

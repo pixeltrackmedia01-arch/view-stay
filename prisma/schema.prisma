@@ -20,19 +20,54 @@ enum HotelStatus {
   SUSPENDED
 }
 
+enum HotelTemplate {
+  MOUNTAIN_LODGE
+  HERITAGE_BOUTIQUE
+  CITY_MODERN
+  COASTAL_RESORT
+  GARDEN_RETREAT
+}
+
+enum CancellationPolicy {
+  FLEXIBLE // free cancellation until the day before check-in
+  MODERATE // free cancellation until 5 days before check-in
+  STRICT // no free cancellation on the standard rate
+}
+
+enum RatePlan {
+  FLEXIBLE
+  NON_REFUNDABLE
+}
+
 enum RoomStatus {
   ACTIVE
   MAINTENANCE
   INACTIVE
 }
 
+enum RoomCategory {
+  STANDARD
+  DELUXE
+  SUITE
+}
+
+enum Side {
+  TOP
+  RIGHT
+  BOTTOM
+  LEFT
+}
+
 enum ViewType {
   SEA
+  LAKE
+  RIVER
   MOUNTAIN
-  CITY
+  VALLEY
   GARDEN
-  POOL
+  CITY
   COURTYARD
+  POOL
   NONE
 }
 
@@ -54,53 +89,161 @@ enum MapElementKind {
   CORRIDOR
   LOBBY
   SERVICE
+  COURTYARD
+  GARDEN
+  VERANDA
+}
+
+enum MediaCategory {
+  DESTINATION
+  EXTERIOR
+  LOBBY
+  RECEPTION
+  RESTAURANT
+  POOL
+  COURTYARD
+  GARDEN
+  COMMON_AREA
+  ROOM_OVERVIEW
+  SLEEPING_AREA
+  WINDOW_VIEW
+  BALCONY
+  BATHROOM
+  SEATING_AREA
+  WORKSPACE
+  SPECIAL_FEATURE
+}
+
+enum MediaSource {
+  LIBRARY // procedurally generated illustrative artwork
+  UPLOAD // uploaded by a partner
 }
 
 model User {
-  id           String     @id @default(cuid())
-  email        String     @unique
-  name         String
-  phone        String?
-  passwordHash String
-  role         Role       @default(CUSTOMER)
-  isActive     Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  hotels       Hotel[]
-  bookings     Booking[]
-  holds        RoomHold[]
-  wishlist     Wishlist[]
-  reviews      Review[]
-  auditLogs    AuditLog[]
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  name                String
+  phone               String?
+  passwordHash        String
+  role                Role                 @default(CUSTOMER)
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  hotels              Hotel[]
+  bookings            Booking[]
+  holds               RoomHold[]
+  wishlist            Wishlist[]
+  reviews             Review[]
+  auditLogs           AuditLog[]
+  passwordResetTokens PasswordResetToken[]
+  uploads             MediaAsset[]
+}
+
+model Destination {
+  id          String       @id @default(cuid())
+  slug        String       @unique
+  name        String
+  state       String
+  region      String
+  tagline     String
+  description String
+  latitude    Float
+  longitude   Float
+  themes      String[]
+  attractions String[]
+  featured    Boolean      @default(false)
+  sortOrder   Int          @default(0)
+  heroAssetId String?
+  heroAsset   MediaAsset?  @relation("DestinationHero", fields: [heroAssetId], references: [id])
+  createdAt   DateTime     @default(now())
+  hotels      Hotel[]
+}
+
+/// Central image manifest. Library assets are generated illustrative artwork; uploads come from partners.
+model MediaAsset {
+  id           String        @id @default(cuid())
+  key          String        @unique
+  path         String
+  category     MediaCategory
+  alt          String
+  width        Int
+  height       Int
+  illustrative Boolean       @default(true)
+  source       MediaSource   @default(LIBRARY)
+  mimeType     String        @default("image/svg+xml")
+  sizeBytes    Int?
+  uploadedById String?
+  uploadedBy   User?         @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime      @default(now())
+  hotelPhotos  HotelPhoto[]
+  roomPhotos   RoomPhoto[]
+  destinations Destination[] @relation("DestinationHero")
+
+  @@index([category])
 }
 
 model Hotel {
-  id           String      @id @default(cuid())
-  slug         String      @unique
-  name         String
-  description  String
-  city         String
-  country      String
-  address      String
-  starRating   Int         @default(3)
-  amenities    String[]
-  coverHue     Int         @default(200)
-  checkInTime  String      @default("14:00")
-  checkOutTime String      @default("11:00")
-  status       HotelStatus @default(PENDING)
-  ownerId      String
-  owner        User        @relation(fields: [ownerId], references: [id])
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  floors       Floor[]
-  roomTypes    RoomType[]
-  rooms        Room[]
-  bookings     Booking[]
-  wishlist     Wishlist[]
-  reviews      Review[]
+  id                 String             @id @default(cuid())
+  slug               String             @unique
+  name               String
+  description        String
+  destinationId      String
+  destination        Destination        @relation(fields: [destinationId], references: [id])
+  city               String
+  country            String
+  address            String
+  neighborhood       String             @default("")
+  starRating         Int                @default(3)
+  amenities          String[]
+  highlights         String[]           @default([])
+  houseRules         String[]           @default([])
+  template           HotelTemplate      @default(CITY_MODERN)
+  /// Index into the template's exterior material palette (3D + exterior photography).
+  palette            Int                @default(0)
+  cancellationPolicy CancellationPolicy @default(FLEXIBLE)
+  /// Simulated position within the destination, 0..1, for the illustrative map.
+  mapX               Float              @default(0.5)
+  mapY               Float              @default(0.5)
+  latitude           Float?
+  longitude          Float?
+  checkInTime        String             @default("14:00")
+  checkOutTime       String             @default("11:00")
+  status             HotelStatus        @default(PENDING)
+  featured           Boolean            @default(false)
+  isDemo             Boolean            @default(false)
+  ratingAvg          Float?
+  reviewCount        Int                @default(0)
+  ownerId            String
+  owner              User               @relation(fields: [ownerId], references: [id])
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  floors             Floor[]
+  roomTypes          RoomType[]
+  rooms              Room[]
+  bookings           Booking[]
+  wishlist           Wishlist[]
+  reviews            Review[]
+  photos             HotelPhoto[]
+  roomPhotos         RoomPhoto[]
 
   @@index([city])
   @@index([status])
+  @@index([destinationId])
+}
+
+model HotelPhoto {
+  id        String        @id @default(cuid())
+  hotelId   String
+  hotel     Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  assetId   String
+  asset     MediaAsset    @relation(fields: [assetId], references: [id])
+  category  MediaCategory
+  alt       String
+  caption   String?
+  sortOrder Int           @default(0)
+  isCover   Boolean       @default(false)
+
+  @@index([hotelId, sortOrder])
 }
 
 model Floor {
@@ -109,9 +252,11 @@ model Floor {
   hotel    Hotel        @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   level    Int
   name     String
-  // Map grid size in abstract units
+  // Map grid size in abstract units (1 unit = 2.5 m)
   width    Int          @default(12)
   height   Int          @default(6)
+  /// Building massing rectangles for this floor: [{x,y,w,h}]. Rooms must sit inside a wing.
+  wings    Json         @default("[]")
   rooms    Room[]
   elements MapElement[]
 
@@ -131,70 +276,104 @@ model MapElement {
 }
 
 model RoomType {
-  id          String  @id @default(cuid())
+  id          String       @id @default(cuid())
   hotelId     String
-  hotel       Hotel   @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  hotel       Hotel        @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   name        String
   description String
+  category    RoomCategory @default(STANDARD)
   bedType     String
   maxGuests   Int
   sizeSqm     Int
-  // Base nightly price in minor currency units (paise / cents)
+  // Base nightly price in minor currency units (paise)
   basePrice   Int
+  amenities   String[]     @default([])
   rooms       Room[]
 
   @@unique([hotelId, name])
 }
 
 model Room {
-  id               String         @id @default(cuid())
-  hotelId          String
-  hotel            Hotel          @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  floorId          String
-  floor            Floor          @relation(fields: [floorId], references: [id], onDelete: Cascade)
-  roomTypeId       String
-  roomType         RoomType       @relation(fields: [roomTypeId], references: [id])
-  number           String
-  viewType         ViewType       @default(NONE)
+  id                  String      @id @default(cuid())
+  hotelId             String
+  hotel               Hotel       @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  floorId             String
+  floor               Floor       @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  roomTypeId          String
+  roomType            RoomType    @relation(fields: [roomTypeId], references: [id])
+  number              String
+  viewType            ViewType    @default(NONE)
   // 0-100, verified by the property team
-  viewScore        Int            @default(50)
-  viewVerified     Boolean        @default(false)
-  hasBalcony       Boolean        @default(false)
-  isCorner         Boolean        @default(false)
-  windowCount      Int            @default(1)
-  nearElevator     Boolean        @default(false)
-  accessible       Boolean        @default(false)
+  viewScore           Int         @default(50)
+  viewVerified        Boolean     @default(false)
+  hasBalcony          Boolean     @default(false)
+  isCorner            Boolean     @default(false)
+  windowCount         Int         @default(1)
+  windowSide          Side        @default(TOP)
+  secondaryWindowSide Side?
+  balconySide         Side?
+  bedType             String      @default("Queen")
+  sizeSqm             Int         @default(24)
+  nearElevator        Boolean     @default(false)
+  accessible          Boolean     @default(false)
   // Premium (positive) or discount (negative) on top of room type base price, minor units
-  priceAdjustment  Int            @default(0)
-  notes            String?
-  status           RoomStatus     @default(ACTIVE)
+  priceAdjustment     Int         @default(0)
+  notes               String?
+  status              RoomStatus  @default(ACTIVE)
   // Position on the floor map grid
-  x                Int
-  y                Int
-  w                Int            @default(2)
-  h                Int            @default(2)
-  bookings         Booking[]
-  holds            RoomHold[]
-  blocks           RoomBlock[]
+  x                   Int
+  y                   Int
+  w                   Int         @default(2)
+  h                   Int         @default(2)
+  bookings            Booking[]
+  holds               RoomHold[]
+  blocks              RoomBlock[]
+  photos              RoomPhoto[]
 
   @@unique([hotelId, number])
   @@index([floorId])
+  @@index([hotelId, status])
+}
+
+/// Photographs associated with one physical room. Library images are illustrative, never verified photography.
+model RoomPhoto {
+  id           String        @id @default(cuid())
+  roomId       String
+  room         Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  hotelId      String
+  hotel        Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  assetId      String
+  asset        MediaAsset    @relation(fields: [assetId], references: [id])
+  category     MediaCategory
+  alt          String
+  caption      String?
+  sortOrder    Int           @default(0)
+  isPrimary    Boolean       @default(false)
+  illustrative Boolean       @default(true)
+
+  @@index([roomId, sortOrder])
+  @@index([hotelId])
 }
 
 model RoomHold {
-  id        String   @id @default(cuid())
-  roomId    String
-  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  checkIn   DateTime @db.Date
-  checkOut  DateTime @db.Date
-  guests    Int
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  /// Holds created together (multi-room selection) share a group and are checked out together.
+  groupId     String
+  roomId      String
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkIn     DateTime @db.Date
+  checkOut    DateTime @db.Date
+  guests      Int
+  /// Stay total (flexible rate, incl. taxes) quoted when the hold was placed.
+  quotedTotal Int      @default(0)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
 
   @@index([roomId, expiresAt])
   @@index([userId])
+  @@index([groupId])
 }
 
 model RoomBlock {
@@ -212,6 +391,10 @@ model RoomBlock {
 model Booking {
   id             String        @id @default(cuid())
   code           String        @unique
+  /// Shared by bookings paid together in one checkout (one per physical room).
+  groupCode      String?
+  /// Hold group this booking was created from; makes checkout idempotent.
+  holdGroupId    String?
   userId         String
   user           User          @relation(fields: [userId], references: [id])
   hotelId        String
@@ -226,10 +409,14 @@ model Booking {
   guestEmail     String
   guestPhone     String
   specialRequest String?
+  ratePlan       RatePlan      @default(FLEXIBLE)
   nightlyRate    Int
   subtotal       Int
+  discount       Int           @default(0)
   taxes          Int
   total          Int
+  /// Marketplace commission on this booking (minor units).
+  commission     Int           @default(0)
   currency       String        @default("INR")
   status         BookingStatus @default(CONFIRMED)
   cancelledAt    DateTime?
@@ -238,9 +425,11 @@ model Booking {
   payments       Payment[]
   review         Review?
 
+  @@unique([holdGroupId, roomId])
   @@index([roomId, checkIn, checkOut])
   @@index([userId])
   @@index([hotelId])
+  @@index([groupCode])
 }
 
 model Payment {
@@ -277,6 +466,30 @@ model Review {
   rating    Int
   comment   String
   createdAt DateTime @default(now())
+
+  @@index([hotelId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+/// Outgoing email recorded locally. No email provider is connected; admins can read the outbox.
+model EmailMessage {
+  id        String   @id @default(cuid())
+  to        String
+  subject   String
+  body      String
+  kind      String
+  createdAt DateTime @default(now())
 }
 
 model AuditLog {
@@ -290,4 +503,5 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([entity, entityId])
+  @@index([createdAt])
 }

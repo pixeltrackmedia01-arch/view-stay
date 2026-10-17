@@ -5,7 +5,11 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "CONFLICT"
   | "HOLD_EXPIRED"
-  | "PAYMENT_FAILED";
+  | "PAYMENT_FAILED"
+  | "PRICE_CHANGED"
+  | "RATE_LIMITED"
+  | "PAYLOAD_TOO_LARGE"
+  | "UNSUPPORTED_MEDIA_TYPE";
 
 const STATUS: Record<ErrorCode, number> = {
   BAD_REQUEST: 400,
@@ -15,6 +19,10 @@ const STATUS: Record<ErrorCode, number> = {
   CONFLICT: 409,
   HOLD_EXPIRED: 410,
   PAYMENT_FAILED: 402,
+  PRICE_CHANGED: 409,
+  RATE_LIMITED: 429,
+  PAYLOAD_TOO_LARGE: 413,
+  UNSUPPORTED_MEDIA_TYPE: 415,
 };
 
 export class AppError extends Error {
@@ -22,6 +30,8 @@ export class AppError extends Error {
   constructor(
     readonly code: ErrorCode,
     message: string,
+    /** Safe, client-facing extra data (never internals). */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "AppError";

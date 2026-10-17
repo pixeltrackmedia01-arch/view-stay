@@ -9,7 +9,7 @@ export function json<T>(data: T, init?: ResponseInit) {
 
 export function errorResponse(e: unknown) {
   if (isAppError(e)) {
-    return NextResponse.json({ error: { code: e.code, message: e.message } }, { status: e.status });
+    return NextResponse.json({ error: { code: e.code, message: e.message, ...(e.details ? { details: e.details } : {}) } }, { status: e.status });
   }
   if (e instanceof ZodError) {
     return NextResponse.json(

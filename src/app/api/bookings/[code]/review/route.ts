@@ -6,6 +6,5 @@ import { addReview } from "@/server/bookings";
 export const POST = route<{ params: Promise<{ code: string }> }>(async (req, { params }) => {
   const user = await requireUser();
   const { rating, comment } = reviewInput.parse(await readJson(req));
-  const review = await addReview(user.id, (await params).code, rating, comment);
-  return json({ review }, { status: 201 });
+  return json({ review: await addReview(user.id, (await params).code, rating, comment) }, { status: 201 });
 });

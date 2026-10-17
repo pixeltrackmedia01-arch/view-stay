@@ -2,63 +2,52 @@ import { forwardRef, type InputHTMLAttributes, type SelectHTMLAttributes, type T
 import { cn } from "@/lib/utils";
 
 const base =
-  "w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-ink placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100 aria-[invalid=true]:border-rose-500";
+  "w-full rounded-[var(--radius-sm)] border border-line bg-surface px-3 text-[15px] text-ink placeholder:text-ink-3 transition-colors hover:border-line-strong focus:border-secondary focus:outline-none focus:shadow-[var(--shadow-focus)] disabled:bg-subtle disabled:text-ink-3 aria-[invalid=true]:border-danger";
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input(
-  { className, ...props },
-  ref,
-) {
-  return <input ref={ref} className={cn(base, "h-10", className)} {...props} />;
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...props }, ref) {
+  return <input ref={ref} className={cn(base, "h-[var(--height-control)]", className)} {...props} />;
 });
 
-export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select(
-  { className, ...props },
-  ref,
-) {
-  return <select ref={ref} className={cn(base, "h-10 pr-8", className)} {...props} />;
+export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select({ className, ...props }, ref) {
+  return <select ref={ref} className={cn(base, "h-[var(--height-control)] pr-8", className)} {...props} />;
 });
 
-export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea(
-  { className, ...props },
-  ref,
-) {
-  return <textarea ref={ref} className={cn(base, "min-h-20 py-2", className)} {...props} />;
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea({ className, ...props }, ref) {
+  return <textarea ref={ref} className={cn(base, "min-h-24 py-2.5", className)} {...props} />;
 });
 
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
-  return <label className={cn("mb-1 block text-sm font-medium text-slate-700", className)} {...props} />;
+  return <label className={cn("mb-1.5 block text-sm font-medium text-ink", className)} {...props} />;
 }
 
 export function FieldError({ message, id }: { message?: string; id?: string }) {
   if (!message) return null;
   return (
-    <p id={id} role="alert" className="mt-1 text-xs text-rose-600">
+    <p id={id} role="alert" className="mt-1.5 text-[13px] text-danger">
       {message}
     </p>
   );
 }
 
-export function Field({
-  label,
-  htmlFor,
-  error,
-  children,
-  hint,
-  className,
-}: {
-  label: string;
-  htmlFor: string;
-  error?: string;
-  hint?: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
+export function Field({ label, htmlFor, error, children, hint, className }: { label: string; htmlFor: string; error?: string; hint?: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={className}>
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
-      {hint && !error && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+      {hint && !error && <p className="mt-1.5 text-[13px] text-ink-3">{hint}</p>}
       <FieldError id={`${htmlFor}-error`} message={error} />
     </div>
   );
 }
+
+export const Checkbox = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { label: React.ReactNode; description?: string }>(function Checkbox({ label, description, className, id, ...props }, ref) {
+  return (
+    <label htmlFor={id} className={cn("flex min-h-11 cursor-pointer items-start gap-3 py-1.5 text-sm text-ink", className)}>
+      <input ref={ref} id={id} type="checkbox" className="mt-0.5 size-[18px] shrink-0 cursor-pointer rounded accent-[var(--color-primary)]" {...props} />
+      <span>
+        {label}
+        {description && <span className="block text-[13px] text-ink-3">{description}</span>}
+      </span>
+    </label>
+  );
+});
