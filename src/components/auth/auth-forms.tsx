@@ -152,7 +152,7 @@ export function ForgotPasswordForm() {
   if (sent) {
     return (
       <Alert tone="success" title="Check your email">
-        If an account exists for that address, we&apos;ve sent a link to reset your password. It expires in 30 minutes. (Demo: emails are recorded in the outbox, not delivered; administrators can see them under Admin → Email outbox.)
+        If an account exists for that address, we&apos;ve sent a link to reset your password. It expires in 30 minutes. (Demo: emails are recorded, not delivered, so the link only appears in the server log of a development install.)
       </Alert>
     );
   }
