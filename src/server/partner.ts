@@ -4,8 +4,9 @@ import { TEMPLATE_INFO, type HotelTemplateKey, type ViewKey } from "@/lib/catalo
 import { db } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { addDays, nightsBetween, parseDateOnly, toDateOnlyString, todayUtc } from "@/lib/dates";
-import { contains, overlaps, type Rect } from "@/lib/layout/geometry";
+import type { Rect } from "@/lib/layout/geometry";
 import { roomAreaSqm } from "@/lib/layout/templates";
+import { validateLayout } from "@/lib/layout/validate";
 import type { MediaCategoryKey } from "@/lib/media/library";
 import type { Tod } from "@/lib/media/scenes";
 import { slugify } from "@/lib/utils";
@@ -164,29 +165,7 @@ async function regenerateLibraryPhotos(roomIds: string[]) {
   await db.roomPhoto.createMany({ data: rows, skipDuplicates: true });
 }
 
-export interface LayoutIssue {
-  room: string;
-  message: string;
-}
-
-/** Pure validation of a floor layout; shared by the editor (client preview) and the save endpoint. */
-export function validateLayout(floor: { width: number; height: number; wings: Rect[] }, solids: Rect[], rooms: (Rect & { number: string })[]): LayoutIssue[] {
-  const issues: LayoutIssue[] = [];
-  const insideWings = (r: Rect) => {
-    for (let x = r.x; x < r.x + r.w; x++) for (let y = r.y; y < r.y + r.h; y++) if (!floor.wings.some((w) => contains(w, { x, y, w: 1, h: 1 }))) return false;
-    return true;
-  };
-  const seen = new Set<string>();
-  rooms.forEach((r, i) => {
-    if (seen.has(r.number)) issues.push({ room: r.number, message: `Room number ${r.number} is used twice` });
-    seen.add(r.number);
-    if (r.x + r.w > floor.width || r.y + r.h > floor.height) issues.push({ room: r.number, message: `Room ${r.number} extends beyond the floor plate` });
-    else if (floor.wings.length && !insideWings(r)) issues.push({ room: r.number, message: `Room ${r.number} sits outside the building footprint` });
-    for (const s of solids) if (overlaps(r, s)) issues.push({ room: r.number, message: `Room ${r.number} overlaps a corridor, lift or stairs` });
-    for (let j = i + 1; j < rooms.length; j++) if (overlaps(r, rooms[j])) issues.push({ room: r.number, message: `Rooms ${r.number} and ${rooms[j].number} overlap` });
-  });
-  return issues;
-}
+export { validateLayout, type LayoutIssue } from "@/lib/layout/validate";
 
 /** Save the room layout of one floor. The stored layout drives the customer floor plan and the 3D model. */
 export async function saveFloorLayout(actor: Actor, floorId: string, input: FloorLayoutInput, now: Date = new Date()) {

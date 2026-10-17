@@ -36,6 +36,8 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
   const first = bookings[0];
   const hotel = first.hotel;
   const isGuest = first.userId === user.id;
+  // Property and ViewStay staff can also cancel; their cancellations are always refunded.
+  const isStaff = user.role === "ADMIN" || (user.role === "PARTNER" && hotel.ownerId === user.id);
   const groupCode = first.groupCode ?? first.code;
   const total = bookings.reduce((s, b) => s + b.total, 0);
   const terms = cancellationTerms(hotel.cancellationPolicy, first.ratePlan, first.checkIn);
@@ -73,7 +75,7 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
         <div className="space-y-4">
           {bookings.map((b) => {
             const refundable = refundOnCancel(hotel.cancellationPolicy, b.ratePlan, b.checkIn);
-            const canCancel = isGuest && b.status === "CONFIRMED" && b.checkIn > todayUtc();
+            const canCancel = (isGuest || isStaff) && b.status === "CONFIRMED" && b.checkIn > todayUtc();
             const canReview = isGuest && b.status === "COMPLETED" && !b.review;
             return (
               <Card key={b.id} data-testid="booking-room" data-room-number={b.room.number}>
@@ -102,7 +104,7 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
                       </p>
                     </div>
                   </div>
-                  {canCancel && <CancelBookingButton code={b.code} roomNumber={b.room.number} refundNote={refundable ? `You'll be refunded ${formatMoney(b.total)}.` : "This booking is not eligible for a refund under its terms."} />}
+                  {canCancel && <CancelBookingButton code={b.code} roomNumber={b.room.number} refundNote={!isGuest ? `Cancelling on behalf of the property refunds the guest in full (${formatMoney(b.total)}).` : refundable ? `You'll be refunded ${formatMoney(b.total)}.` : "This booking is not eligible for a refund under its terms."} />}
                   {b.review && (
                     <p className="rounded-[var(--radius-sm)] bg-subtle p-3 text-sm text-ink-2">
                       Your review: {b.review.rating}/5 · &ldquo;{b.review.comment}&rdquo;
