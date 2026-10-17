@@ -1,118 +1,79 @@
 # ViewStay
 
-**Choose your room, not just your room category.**
+**Your stay. Your room. Your view.**
 
-ViewStay is a hotel booking marketplace where travellers pick the *exact physical room* on a floor map, much like picking a seat on an airline seat map. They can choose the sea-facing corner room on floor 4, the balcony room away from the lift, or the same room they stayed in last time.
+ViewStay is a hotel marketplace where travellers choose the *exact physical room* they will stay in. They explore an illustrative 3D model of the building, its 2D floor plan or a plain room list, then hold and book that specific room. Nothing is substituted silently.
+
+> **This is a demo.** All 350 properties are fictional. Imagery and 3D models are generated illustrations and are labelled as such. Payments go through a simulator, the 12% tax is a demo rate, and prices are not live commercial rates.
 
 ## What works
 
-End-to-end journey (covered by an automated browser test):
-
-> Destination search → hotel results → hotel details → floor map → exact room selection → 10-minute room hold → guest details → dummy payment → confirmation → My Bookings → rebook the same room
-
-The same booking then shows up in the customer account, the partner dashboard and the admin console.
-
 | Area | Features |
 | --- | --- |
-| **Traveller** | Search by destination, dates and guests. Filter by view, balcony and star rating; sort by price, rating or view score. Interactive floor map with live availability (refreshes every 15 s) and a map/list toggle. Room filters: view, balcony, corner, away from lift, accessible, verified view. Room panel shows view score, features and per-room pricing. Checkout has a hold countdown. Bookings can be cancelled (refunded), rebooked in one click and reviewed after the stay. There is also a wishlist. |
-| **Inventory** | Room holds lock a room for one user for `HOLD_MINUTES`. Per-room PostgreSQL advisory locks serialise concurrent hold and checkout attempts. A Postgres **exclusion constraint** makes overlapping active bookings for the same room impossible, even when application checks are bypassed. Stays are half-open intervals, so back-to-back stays are allowed. |
-| **Pricing** | Room-type base price plus a per-room premium or discount, +15% on Friday and Saturday nights, and 12% tax. Amounts are stored in paise and rounded to whole rupees. |
-| **Partner** | KPIs (revenue, active bookings, 30-day occupancy) and a revenue chart. Room inventory editor covering status, price adjustment, view type/score/verification, balcony, corner, accessibility, windows and notes. Date blocks for maintenance, refused when they clash with a booking. Bookings list with filters and cancellation. An "add property" flow generates floors, a corridor, lift and stairs, and numbered rooms. New properties wait for admin approval. |
-| **Admin** | Marketplace KPIs and GMV chart, approve or suspend hotels, activate or deactivate users, search all bookings, and an audit trail. |
-| **Auth** | Email and password (bcrypt). Signed, httpOnly JWT session cookie. Roles: `CUSTOMER`, `PARTNER`, `ADMIN`. Middleware guards pages, and every API route re-checks the user and role against the database. |
+| **Discovery** | Homepage (hero search, destinations, featured stays, room showcases by view and value, FAQ). 35 Indian destinations × 10 properties = 350. Search filters: price, rating, stars, property type, amenities, view, balcony, corner, floor, bed type, size, accessibility and free cancellation. Removable filter chips; mobile bottom sheet; six sort orders; list/map toggle with a clearly labelled *simulated* map. |
+| **Property page** | Photo mosaic with a categorised lightbox, amenities, room types, policies, simulated location map, and reviews. A stay editor sits in a sticky card. |
+| **Room explorer** | Three modes share one selection: **3D Explore** (procedural model per template: mountain lodge, heritage boutique, city modern, coastal resort, garden retreat; orbit/zoom/pan, presets, whole/cutaway/exploded floors, availability or exterior colours), **2D Floor Plan** (SVG, zoom/pan, legend, patterns as well as colour, keyboard navigation) and **Room List**. Also: room filters, a room detail panel or mobile sheet, a database-backed room photo gallery, an illustrative 3D interior preview, compare up to 3 rooms, rule-based recommendations with stated reasons (no AI), and URL-synced selection. Falls back to the plan without WebGL. |
+| **Booking** | Multi-room holds (up to 4 exact rooms, 10 minutes) under per-room advisory locks. Checkout offers Flexible or Non-refundable (−10%) rates, a price breakdown and a hold timer. If the price changes, payment is refused until the guest confirms the new total. Checkout is idempotent per hold group (concurrent duplicates return the same booking). A Postgres exclusion constraint makes double-booking impossible. The app never substitutes a room. |
+| **Account** | Register, sign in, password reset (token hashed, 30-minute expiry), profile and password. Bookings in Upcoming, Past and Cancelled tabs. Booking detail, cancellation by policy, reviews after a stay, wishlist, and "stay in this room again" with an availability check and labelled alternatives. |
+| **Partner** | Overview analytics, properties, creating a property from a template (pending approval), profile and policies, room-type prices, per-room edits, a **floor-plan editor** (drag, resize, add and remove rooms; live validation; save or discard; 3D preview of the unsaved draft), room photo management (upload with content sniffing, reorder, set cover, delete), an availability calendar with closures, and bookings. |
+| **Admin** | Platform overview, approvals, properties (approve, feature, suspend), destinations, users (deactivate), booking search, commission report, audit log, and an email outbox with reset tokens redacted. Every action needs confirmation and is audit-logged. |
 
 ## Stack
 
-Next.js 15 (App Router) · React 19 · TypeScript (strict) · Tailwind CSS 4 · Lucide icons · React Hook Form + Zod · TanStack Query · Recharts · Prisma 6 + PostgreSQL · jose + bcryptjs · Vitest · Playwright.
+Next.js 15 (App Router) · React 19 · TypeScript strict · Tailwind CSS 4 · Fraunces + Inter · Lucide · three.js / React Three Fiber / drei · Zustand · TanStack Query · React Hook Form + Zod · Recharts · Prisma 6 + PostgreSQL · jose + bcryptjs · Vitest · Playwright.
 
-UI primitives (button, inputs, card, badge) are small accessible components in `src/components/ui`, written in the shadcn style.
+## How the catalogue is generated
+
+- `src/data/destinations.ts` defines 35 destinations with their views, scenes and price levels.
+- `src/lib/layout/templates.ts` builds deterministic floor layouts per template: wings, corridors, lifts, rooms with window, balcony and outlook sides. **The same stored layout drives the 2D plan, the 3D model and each room's photos.**
+- `src/lib/media/*` paints illustrative SVG artwork (scenes, interiors, exteriors) on demand at `/media/library/<key>.svg`. It is cached immutably and served with a strict CSP. No external image URLs are used.
+- `src/server/seed-data.ts` is idempotent. It seeds 350 hotels, about 11,000 rooms, about 65,000 room-photo rows, demo bookings and reviews. `--reset` wipes the database first.
 
 ## Getting started
 
-Requirements: Node 20+ and PostgreSQL 14+ (the `btree_gist` extension must be available; it ships with Postgres).
+Requirements: Node 20+ and PostgreSQL 14+ (with the `btree_gist` extension available).
 
 ```bash
-cp .env.example .env          # set DATABASE_URL and AUTH_SECRET
+cp .env.example .env          # DATABASE_URL, AUTH_SECRET
 npm install
-npx prisma migrate deploy     # create schema
-npm run db:seed               # demo data (wipes existing rows)
-npm run dev                   # http://localhost:3000
+npx prisma migrate deploy
+npx tsx prisma/seed.ts        # add --reset to wipe first
+npm run dev
 ```
 
-### Demo accounts
+Optional settings: `HOLD_MINUTES` (default 10), `UPLOAD_DIR` (default `storage/uploads`) and `SEED_ON_EMPTY=1`, which seeds an empty database on first boot (used for the hosted demo).
 
-The password for every account is `Password123!`.
+### Demo accounts (password `Password123!`)
 
 | Email | Role |
 | --- | --- |
-| `customer@viewstay.dev` | Traveller with past, upcoming and cancelled bookings |
+| `customer@viewstay.dev` | Traveller with upcoming, past and cancelled bookings |
 | `guest@viewstay.dev` | Second traveller |
-| `partner@viewstay.dev` | Owns Azure Bay (Goa), Pinecrest (Manali), Marine Crown (Mumbai) |
-| `partner2@viewstay.dev` | Owns Udaipur and Munnar hotels, plus a *pending* Jaipur hotel |
-| `admin@viewstay.dev` | Super administrator |
+| `partner@viewstay.dev` … `partner8@viewstay.dev` | Property partners |
+| `admin@viewstay.dev` | Administrator |
 
-### Dummy payment cards
+### Test cards
 
-| Card | Result |
-| --- | --- |
-| `4242 4242 4242 4242` | Success |
-| `4000 0000 0000 0002` | Declined (the room stays held, so you can retry) |
-| `4000 0000 0000 9995` | Insufficient funds |
+`4242 4242 4242 4242` succeeds; `4000 0000 0000 0002` is declined; `4000 0000 0000 9995` returns insufficient funds. Use any future expiry and any CVC.
 
-Use any future expiry (MM/YY) and any 3-digit CVC. No real payment provider is involved. The gateway is a local adapter in `src/server/payments.ts`.
+## Quality checks
 
-## Scripts
-
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` / `build` / `start` | Next.js |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run lint` | ESLint |
-| `npm test` | Unit + integration tests (Vitest). Uses `TEST_DATABASE_URL`, default `postgresql://postgres:postgres@localhost:5432/viewstay_test`. Migrates and re-seeds that database. |
-| `npm run test:e2e` | Playwright browser tests against `next start` (run `npm run build` first; uses the `DATABASE_URL` database) |
-| `npm run db:migrate` / `db:seed` | Apply migrations / load demo data |
-
-## Project layout
-
-```
-prisma/              schema, migrations (incl. exclusion constraint), seed entry
-src/app/             pages (App Router) and REST API route handlers under app/api
-src/components/      UI: room map, checkout, dashboards, forms
-src/lib/             db client, auth/session, validation (Zod), pricing, dates, API helpers
-src/server/          domain services: availability, holds, bookings, payments, search, partner, admin, seed data
-tests/unit           pricing, dates/validation, payment gateway
-tests/integration    holds, booking, concurrency, cancellation, partner inventory, search (real Postgres)
-tests/e2e            full customer journey + smoke tests (Playwright)
+```bash
+npm run typecheck && npm run lint
+npm test            # Vitest: unit + integration against a dedicated *_test database (reset + seeded per run)
+npm run build
+npm run test:e2e    # Playwright against `next start` (desktop + Pixel 7)
 ```
 
-### API
+- **Integration tests** cover holds, conflicts, the DB exclusion constraint, idempotent and concurrent checkout, price-change refusal, declined cards, expired holds, multi-room bookings, cancellation rules, rebook alternatives, the room-photo service and HTTP endpoint, layout validation, partner isolation, closures and upload validation.
+- **E2E tests** cover the full journey (search → room → sign-in redirect → hold → declined then successful payment → account), 3D ↔ 2D ↔ list selection sync via the `window.__viewstay3d` test hook, the gallery (API, categories, keyboard), compare, role guards, and layouts at 1440, 1280, 1024, 768, 390 and 360 px.
 
-| Method & path | Who | Purpose |
-| --- | --- | --- |
-| `POST /api/auth/register` · `login` · `logout`, `GET /api/auth/me` | anyone | Session management |
-| `GET /api/hotels?city&checkIn&checkOut&guests&view&balcony&minStars&sort` | anyone | Search |
-| `GET /api/hotels/:slug/rooms?checkIn&checkOut&guests` | anyone | Floor plans with per-room live status and pricing |
-| `POST /api/holds`, `DELETE /api/holds/:id` | signed in | Hold or release a specific room |
-| `POST /api/bookings` (`holdId`, `guest`, `card`), `GET /api/bookings` | signed in | Checkout / my bookings |
-| `POST /api/bookings/:code/cancel` · `review` | owner / partner / admin | Cancel (refund) / review a completed stay |
-| `POST`/`DELETE /api/wishlist/:hotelId` | signed in | Wishlist |
-| `PATCH /api/partner/rooms/:id`, `POST /api/partner/rooms/:id/blocks`, `DELETE /api/partner/blocks/:id`, `POST /api/partner/hotels` | partner (own hotels) / admin | Inventory |
-| `PATCH /api/admin/hotels/:id` · `users/:id` | admin | Moderation |
-| `GET /api/health` | anyone | Liveness + DB check |
+## Known limitations
 
-Errors use the shape `{ error: { code, message, fields? } }` with matching HTTP status codes (400/401/403/404/409/410/402).
-
-## Deployment notes
-
-* Set `DATABASE_URL`, `AUTH_SECRET` (32+ random chars) and optionally `HOLD_MINUTES`.
-* `SEED_ON_EMPTY=1` loads demo data at server start, but only when the database has no users. This is useful for hosted demos.
-* The hosted demo runs on Hostinger Node.js hosting with a Supabase Postgres database. Its tables live in a private `viewstay` schema that is not exposed through Supabase's REST API, and the app connects as a dedicated least-privilege role (`DATABASE_URL=...?schema=viewstay`).
-
-## Assumptions and MVP limits
-
-* Single currency (INR); taxes are a flat 12%; free cancellation until the day before check-in.
-* Hotel imagery is generated, with illustrative gradient covers, so the MVP has no external image dependency.
-* Payments, emails and SMS are not connected to real providers. The payment gateway is a deterministic local adapter, and confirmation is shown on screen and recorded.
-* Expired holds are ignored by every availability query and cleaned up lazily, so no background worker is needed.
-* Stays whose check-out date has passed are marked `COMPLETED` lazily when dashboards load.
-* `npm audit` reports advisories in transitive dependencies (Next's bundled `postcss`, `sharp`) that the current Next 15 line does not yet patch. None of them affect runtime request handling in this app.
+- Everything listed above under "This is a demo" applies: fictional properties, illustrative imagery and models, simulated payments, and demo prices and tax rate.
+- Emails are written to an outbox table, not sent.
+- Rate limiting is in memory (per process).
+- Uploads use local disk via a small storage adapter. Use object storage for multi-instance hosting.
+- In dev mode a hydration-mismatch warning occasionally appears and has not been reproduced on a clean load.
+- A missing property renders the not-found page with HTTP 200, not 404, because the loading skeleton streams first. Next adds a `noindex` tag in that case.
+- The 3D view needs WebGL. Without it the app shows the floor plan and room list, which have the same rooms and selection.
