@@ -4,9 +4,16 @@ export async function register() {
   const { db } = await import("@/lib/db");
   const { seedDatabase } = await import("@/server/seed-data");
   try {
-    if ((await db.user.count()) > 0) return;
-    const counts = await seedDatabase(db);
-    console.log("[viewstay] seeded empty database", counts);
+    // Hosts may boot several app processes at once; only one should seed.
+    await db.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('viewstay:seed'))`;
+        if ((await tx.user.count()) > 0) return;
+        const counts = await seedDatabase(tx);
+        console.log("[viewstay] seeded empty database", counts);
+      },
+      { timeout: 300_000, maxWait: 30_000 },
+    );
   } catch (e) {
     console.error("[viewstay] seed on empty failed", e);
   }

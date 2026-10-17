@@ -1,4 +1,4 @@
-import type { PrismaClient, ViewType } from "@prisma/client";
+import type { Prisma, ViewType } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { addDays, todayUtc } from "@/lib/dates";
 import { quoteStay, roomNightlyRate } from "@/lib/pricing";
@@ -165,23 +165,23 @@ function typeForSlot<T>(types: T[], row: "front" | "back", idx: number, slots: n
   return types[0];
 }
 
-/** Load demo data. With `reset`, existing rows are deleted first. */
-export async function seedDatabase(db: PrismaClient, { reset = false }: { reset?: boolean } = {}) {
-  if (reset) await db.$transaction([
-    db.auditLog.deleteMany(),
-    db.review.deleteMany(),
-    db.payment.deleteMany(),
-    db.booking.deleteMany(),
-    db.roomHold.deleteMany(),
-    db.roomBlock.deleteMany(),
-    db.wishlist.deleteMany(),
-    db.room.deleteMany(),
-    db.mapElement.deleteMany(),
-    db.floor.deleteMany(),
-    db.roomType.deleteMany(),
-    db.hotel.deleteMany(),
-    db.user.deleteMany(),
-  ]);
+/** Load demo data. With `reset`, existing rows are deleted first (children before parents). */
+export async function seedDatabase(db: Prisma.TransactionClient, { reset = false }: { reset?: boolean } = {}) {
+  if (reset) {
+    await db.auditLog.deleteMany();
+    await db.review.deleteMany();
+    await db.payment.deleteMany();
+    await db.booking.deleteMany();
+    await db.roomHold.deleteMany();
+    await db.roomBlock.deleteMany();
+    await db.wishlist.deleteMany();
+    await db.room.deleteMany();
+    await db.mapElement.deleteMany();
+    await db.floor.deleteMany();
+    await db.roomType.deleteMany();
+    await db.hotel.deleteMany();
+    await db.user.deleteMany();
+  }
 
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   const mk = (email: string, name: string, role: "CUSTOMER" | "PARTNER" | "ADMIN", phone?: string) =>
