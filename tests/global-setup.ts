@@ -6,5 +6,5 @@ export default function setup() {
   if (!/viewstay_test|_test\b/.test(url)) throw new Error("Refusing to seed a non-test database");
   const env = { ...process.env, DATABASE_URL: url };
   execSync("npx prisma migrate deploy", { env, stdio: "inherit" });
-  execSync("npx tsx prisma/seed.ts", { env, stdio: "inherit" });
+  execSync("npx tsx prisma/seed.ts --reset", { env, stdio: "inherit" });
 }

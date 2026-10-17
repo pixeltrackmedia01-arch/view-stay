@@ -50,7 +50,12 @@ export async function confirmBookingGroup(userId: string, input: CheckoutInput, 
   try {
     return await db.$transaction(async (tx) => {
       const refs = await tx.roomHold.findMany({ where: { groupId: input.holdGroupId, userId }, select: { roomId: true } });
-      if (!refs.length) throw new AppError("HOLD_EXPIRED", "Your room hold has ended. Please select your room again.");
+      if (!refs.length) {
+        // A concurrent submission of the same checkout may have just consumed the hold.
+        const done = await tx.booking.findMany({ where: { holdGroupId: input.holdGroupId, userId }, orderBy: { code: "asc" } });
+        if (done.length) return { groupCode: done[0].groupCode ?? done[0].code, codes: done.map((b) => b.code), total: done.reduce((s, b) => s + b.total, 0), replayed: true };
+        throw new AppError("HOLD_EXPIRED", "Your room hold has ended. Please select your room again.");
+      }
       for (const id of refs.map((r) => r.roomId).sort()) await lockRoom(tx, id);
 
       const holds = await tx.roomHold.findMany({
@@ -58,6 +63,11 @@ export async function confirmBookingGroup(userId: string, input: CheckoutInput, 
         include: { room: { include: { roomType: true, hotel: true } } },
         orderBy: { room: { number: "asc" } },
       });
+      if (!holds.length) {
+        // Lost the race to a duplicate submission that completed while we waited for the room locks.
+        const done = await tx.booking.findMany({ where: { holdGroupId: input.holdGroupId, userId }, orderBy: { code: "asc" } });
+        if (done.length) return { groupCode: done[0].groupCode ?? done[0].code, codes: done.map((b) => b.code), total: done.reduce((s, b) => s + b.total, 0), replayed: true };
+      }
       if (!holds.length || holds.some((h) => h.expiresAt <= now)) {
         await tx.roomHold.deleteMany({ where: { groupId: input.holdGroupId } });
         throw new AppError("HOLD_EXPIRED", "Your room hold has expired. Your rooms may still be free; please select them again.");

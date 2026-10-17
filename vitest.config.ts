@@ -16,6 +16,7 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 60_000,
     env: {
+      UPLOAD_DIR: "/tmp/viewstay-test-uploads",
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/viewstay_test",
       AUTH_SECRET: "test-secret-test-secret-test-secret-123",
       HOLD_MINUTES: "10",

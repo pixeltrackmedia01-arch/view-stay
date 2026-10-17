@@ -29,3 +29,24 @@ describe("pricing", () => {
     expect(() => quoteStay(10000, d("2026-10-15"), d("2026-10-15"))).toThrow();
   });
 });
+
+describe("rate plans and cancellation", () => {
+  it("discounts the non-refundable rate by 10% before tax", () => {
+    const flex = quoteStay(500000, d("2026-11-10"), d("2026-11-12"), "FLEXIBLE");
+    const nr = quoteStay(500000, d("2026-11-10"), d("2026-11-12"), "NON_REFUNDABLE");
+    expect(flex.discount).toBe(0);
+    expect(nr.discount).toBe(100000);
+    expect(nr.taxes).toBe(Math.round(((nr.subtotal - nr.discount) * 0.12) / 100) * 100);
+    expect(nr.total).toBeLessThan(flex.total);
+  });
+
+  it("applies the property policy only to refundable rates", async () => {
+    const { refundOnCancel } = await import("@/lib/cancellation");
+    const checkIn = d("2026-11-20");
+    expect(refundOnCancel("FLEXIBLE", "FLEXIBLE", checkIn, d("2026-11-18"))).toBe(true);
+    expect(refundOnCancel("MODERATE", "FLEXIBLE", checkIn, d("2026-11-18"))).toBe(false);
+    expect(refundOnCancel("MODERATE", "FLEXIBLE", checkIn, d("2026-11-10"))).toBe(true);
+    expect(refundOnCancel("FLEXIBLE", "NON_REFUNDABLE", checkIn, d("2026-11-01"))).toBe(false);
+    expect(refundOnCancel("STRICT", "FLEXIBLE", checkIn, d("2026-11-01"))).toBe(false);
+  });
+});
