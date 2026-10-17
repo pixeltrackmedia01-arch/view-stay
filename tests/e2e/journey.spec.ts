@@ -1,106 +1,68 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { HOTEL, login, stayParams } from "./helpers";
 
-function stayParams(offsetDays: number, nights = 2) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + offsetDays);
-  const checkIn = d.toISOString().slice(0, 10);
-  d.setUTCDate(d.getUTCDate() + nights);
-  return { checkIn, checkOut: d.toISOString().slice(0, 10) };
-}
+test("customer finds a property, chooses an exact room, pays, and sees the booking", async ({ page }) => {
+  const { checkIn, checkOut } = stayParams(150 + Math.floor(Math.random() * 150));
 
-async function login(page: Page, email: string) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("Password123!");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL((u) => !u.pathname.startsWith("/login"));
-}
-
-test("customer books an exact room, sees it everywhere, and rebooks it", async ({ page, browser }) => {
-  // Random far-future window keeps reruns independent
-  const { checkIn, checkOut } = stayParams(120 + Math.floor(Math.random() * 200));
-
-  // 1. Search (anonymous)
   await page.goto("/");
-  await page.getByLabel("Destination").fill("Goa");
-  await page.getByLabel("Check-in").fill(checkIn);
-  await page.getByLabel("Check-out").fill(checkOut);
-  await page.getByLabel("Guests").fill("2");
-  await page.getByRole("button", { name: "Search" }).click();
-  await expect(page).toHaveURL(/\/search\?/);
-  await page.getByTestId("hotel-card").filter({ hasText: "Azure Bay Resort" }).click();
+  const search = page.getByRole("search", { name: "Search stays" }).first();
+  await search.getByLabel("Destination").fill("Coorg");
+  await search.getByLabel("Check-in").fill(checkIn);
+  await search.getByLabel("Check-out").fill(checkOut);
+  await search.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).toHaveURL(/\/search\?.*destination=coorg/);
+  await expect(page.getByTestId("hotel-card").first()).toBeVisible();
 
-  // 2. Room map → pick an exact room on floor 4
-  await expect(page.getByRole("heading", { name: "Azure Bay Resort" })).toBeVisible();
-  await page.getByRole("tab", { name: /Floor 4/ }).click();
-  const room = page.getByTestId("room-403");
-  await expect(room).toHaveAttribute("data-status", "AVAILABLE");
-  await room.click();
-  await expect(page.getByTestId("selected-room-title")).toHaveText("Room 403");
-  await page.getByTestId("reserve-room").click();
+  await page.goto(`/hotels/${HOTEL}?checkIn=${checkIn}&checkOut=${checkOut}&guests=2&rooms=1#rooms`);
+  await page.getByRole("radio", { name: "Room List" }).click();
+  const firstAvailable = page.getByTestId("room-list").locator("li button").first();
+  await firstAvailable.click();
+  const detail = page.getByTestId("room-detail").first();
+  const number = await detail.getAttribute("data-room-number");
+  expect(number).toBeTruthy();
+  await detail.getByTestId("choose-room").click();
+  await page.getByTestId("reserve").click();
 
-  // 3. Not signed in → login, return to the same room
+  // Anonymous: sign in and come back to the same room
   await page.waitForURL(/\/login/);
   await page.getByLabel("Email").fill("customer@viewstay.dev");
-  await page.getByLabel("Password").fill("Password123!");
+  await page.getByLabel("Password", { exact: true }).fill("Password123!");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/hotels\/azure-bay-resort-goa/);
-  await expect(page.getByTestId("selected-room-title")).toHaveText("Room 403");
-  await page.getByTestId("reserve-room").click();
+  await page.waitForURL((u) => u.pathname === `/hotels/${HOTEL}`);
+  await expect(page.getByTestId("room-detail").first()).toHaveAttribute("data-room-number", number!);
+  await expect(page.getByTestId("choose-room").first()).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("reserve").click();
 
-  // 4. Checkout with hold timer
   await page.waitForURL(/\/checkout\//);
-  await expect(page.getByTestId("checkout-room")).toHaveText("Room 403");
-  await expect(page.getByTestId("hold-timer")).toContainText("Room held for you");
+  await expect(page.getByTestId("hold-timer")).toContainText(`Room ${number}`);
+  await expect(page.getByTestId("checkout-room")).toHaveAttribute("data-room-number", number!);
+  const flexTotal = await page.getByTestId("checkout-total").innerText();
+  await page.getByLabel("Non-refundable").check();
+  await expect(page.getByTestId("checkout-total")).not.toHaveText(flexTotal);
 
-  // While held, another customer sees it as being booked
-  const other = await browser.newPage();
-  await login(other, "guest@viewstay.dev");
-  await other.goto(`/hotels/azure-bay-resort-goa?checkIn=${checkIn}&checkOut=${checkOut}&guests=2`);
-  await other.getByRole("tab", { name: /Floor 4/ }).click();
-  await expect(other.getByTestId("room-403")).toHaveAttribute("data-status", "HELD");
-
-  // 5. Declined card keeps the hold, then a good card confirms
+  await page.getByLabel("Phone").fill("+91 98765 43210");
   await page.getByLabel("Card number").fill("4000 0000 0000 0002");
   await page.getByLabel("Expiry (MM/YY)").fill("12/30");
   await page.getByLabel("CVC").fill("123");
   await page.getByTestId("pay-button").click();
   await expect(page.getByTestId("checkout-error")).toContainText("declined");
+
   await page.getByLabel("Card number").fill("4242 4242 4242 4242");
   await page.getByTestId("pay-button").click();
-
-  // 6. Confirmation
   await page.waitForURL(/\/bookings\/VS-/);
-  await expect(page.getByRole("heading", { name: "Booking confirmed!" })).toBeVisible();
-  const code = (await page.getByTestId("booking-code").textContent())!.trim();
+  await expect(page.getByTestId("booking-confirmed")).toContainText(`room ${number}`);
+  const code = new URL(page.url()).pathname.split("/").pop()!;
 
-  // The other customer now sees it as booked
-  await other.reload();
-  await other.getByRole("tab", { name: /Floor 4/ }).click();
-  await expect(other.getByTestId("room-403")).toHaveAttribute("data-status", "BOOKED");
-  await other.close();
+  await page.goto("/account/bookings");
+  await expect(page.locator(`[data-testid=booking-card][data-code="${code}"]`)).toBeVisible();
+});
 
-  // 7. My bookings
+test("protected pages redirect to sign-in and enforce roles", async ({ page }) => {
   await page.goto("/account");
-  const row = page.getByTestId("booking-row").filter({ hasText: code });
-  await expect(row).toContainText("Room 403");
-
-  // 8. Partner sees it
-  const partner = await browser.newPage();
-  await login(partner, "partner@viewstay.dev");
-  await partner.goto("/partner/bookings");
-  await expect(partner.getByTestId("booking-table-row").filter({ hasText: code })).toContainText("403");
-  await partner.close();
-
-  // 9. Admin sees it
-  const admin = await browser.newPage();
-  await login(admin, "admin@viewstay.dev");
-  await admin.goto(`/admin/bookings?q=${code}`);
-  await expect(admin.getByTestId("booking-table-row")).toHaveCount(1);
-  await admin.close();
-
-  // 10. Rebook the same room → map opens with room 403 preselected
-  await row.getByTestId(`rebook-${code}`).click();
-  await page.waitForURL(/room=/);
-  await expect(page.getByTestId("selected-room-title")).toHaveText("Room 403");
+  await expect(page).toHaveURL(/\/login\?next=%2Faccount/);
+  await login(page, "customer@viewstay.dev");
+  await page.goto("/admin");
+  await expect(page).toHaveURL((u) => u.pathname === "/");
+  const res = await page.request.patch("/api/admin/hotels/anything", { data: { featured: true } });
+  expect(res.status()).toBe(403);
 });

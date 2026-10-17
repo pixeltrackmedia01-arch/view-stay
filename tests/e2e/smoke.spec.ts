@@ -1,14 +1,22 @@
 import { expect, test } from "@playwright/test";
+import { HOTEL, noHorizontalOverflow } from "./helpers";
 
-test("home, search and hotel map render", async ({ page }) => {
+test("home, search and property pages render with real data", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /Choose your room/ })).toBeVisible();
-  await page.goto("/search?city=Manali");
-  await expect(page.getByTestId("hotel-card").first()).toContainText("Pinecrest Lodge");
-  await page.getByTestId("hotel-card").first().click();
-  await expect(page.getByRole("tab").first()).toBeVisible();
-  await page.getByTestId("room-101").click();
-  await expect(page.getByTestId("selected-room-title")).toHaveText("Room 101");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Your stay. Your room. Your view.");
+  await noHorizontalOverflow(page);
+  await page.goto("/search?destination=manali");
+  await expect(page.getByTestId("hotel-card").first()).toBeVisible();
+  await page.getByTestId("hotel-card").first().getByRole("link").first().click();
+  await expect(page.getByTestId("hotel-gallery")).toBeVisible();
+  await expect(page.getByTestId("room-explorer")).toBeVisible();
+});
+
+test("unknown pages show a friendly not-found page", async ({ page }) => {
+  await page.goto("/hotels/does-not-exist");
+  await expect(page.getByText("We couldn't find that page")).toBeVisible();
+  await page.goto(`/hotels/${HOTEL}`);
+  await expect(page.getByText("Illustrative").first()).toBeVisible();
 });
 
 test("protected areas redirect to sign in", async ({ page }) => {

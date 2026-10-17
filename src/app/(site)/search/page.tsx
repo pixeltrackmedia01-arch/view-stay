@@ -34,7 +34,10 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const qs = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(raw)) if (typeof v === "string") p.set(k, v);
-    for (const [k, v] of Object.entries(patch)) (v === undefined ? p.delete(k) : p.set(k, v));
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) p.delete(k);
+      else p.set(k, v);
+    }
     return `/search?${p}`;
   };
   const where = dest ? (dest.state === dest.name ? dest.name : `${dest.name}, ${dest.state}`) : params.q ? `“${params.q}”` : "All destinations";

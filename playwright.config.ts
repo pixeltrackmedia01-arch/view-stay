@@ -13,11 +13,12 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: "retain-on-failure",
-    launchOptions: existsSync(localChromium) ? { executablePath: localChromium } : {},
+    // SwiftShader gives headless Chromium a software WebGL context for the 3D explorer.
+    launchOptions: { ...(existsSync(localChromium) ? { executablePath: localChromium } : {}), args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] },
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },
-    { name: "mobile", use: { ...devices["Pixel 7"] }, testMatch: /smoke/ },
+    { name: "mobile", use: { ...devices["Pixel 7"] }, testMatch: /smoke|responsive/ },
   ],
   webServer: {
     command: `npx next start -p ${PORT}`,
