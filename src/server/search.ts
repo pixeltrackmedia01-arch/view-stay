@@ -6,6 +6,8 @@ export type SortKey = "recommended" | "price_asc" | "price_desc" | "rating" | "v
 export interface SearchParams {
   q?: string;
   destinationSlug?: string;
+  /** Restrict to these hotels (wishlist). */
+  hotelIds?: string[];
   checkIn: Date;
   checkOut: Date;
   guests: number;
@@ -74,6 +76,7 @@ export async function searchHotels(p: SearchParams, now: Date = new Date()) {
   const perRoomGuests = Math.max(1, Math.ceil(p.guests / Math.max(1, p.rooms)));
   roomConds.push(Prisma.sql`rt."maxGuests" >= ${perRoomGuests}`);
   if (p.destinationSlug) roomConds.push(Prisma.sql`d.slug = ${p.destinationSlug}`);
+  if (p.hotelIds) roomConds.push(p.hotelIds.length ? Prisma.sql`h.id IN (${Prisma.join(p.hotelIds)})` : Prisma.sql`FALSE`);
   if (p.q?.trim()) {
     const like = `%${p.q.trim().replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
     roomConds.push(Prisma.sql`(d.name ILIKE ${like} OR d.state ILIKE ${like} OR h.name ILIKE ${like} OR h.neighborhood ILIKE ${like})`);
